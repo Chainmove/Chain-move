@@ -21,6 +21,7 @@ export interface AuthUser {
   bio?: string | null
   role?: string
   walletAddress?: string
+  stellarPublicKey?: string | null
   availableBalance?: number
   totalInvested?: number
   totalReturns?: number

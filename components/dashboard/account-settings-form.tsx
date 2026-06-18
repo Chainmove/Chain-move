@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { formatNaira } from "@/lib/currency"
+import { StellarLinkForm } from "@/components/dashboard/stellar-link-form"
 
 interface AccountSettingsFormProps {
   roleLabel: "Driver" | "Investor"
@@ -261,6 +262,8 @@ export function AccountSettingsForm({ roleLabel, kycHref }: AccountSettingsFormP
       </Card>
 
       <div className="space-y-6">
+        <StellarLinkForm onLinked={() => void loadProfile()} />
+
         <Card className="border-border/70">
           <CardHeader>
             <CardTitle>Account Snapshot</CardTitle>
