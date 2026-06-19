@@ -9,6 +9,8 @@ import {
 
 describe("wallet configuration", () => {
   it("keeps the current Privy embedded wallet on Lisk Sepolia", () => {
+    const embeddedWalletAddress = "0x1234567890abcdef1234567890abcdef12345678"
+
     expect(CURRENT_EMBEDDED_WALLET).toMatchObject({
       mode: "embedded-evm",
       provider: "privy",
@@ -25,6 +27,16 @@ describe("wallet configuration", () => {
     expect(embeddedWalletProviderConfig.embeddedWallets).toMatchObject({
       ethereum: { createOnLogin: "all-users" },
       showWalletUIs: true,
+    })
+
+    expect(getWalletDisplay({ embeddedWalletAddress })).toMatchObject({
+      mode: "embedded-evm",
+      label: "Privy embedded wallet",
+      addressLabel: "Wallet",
+      address: embeddedWalletAddress,
+      shortAddress: "0x1234...5678",
+      networkLabel: "Lisk Sepolia",
+      linked: true,
     })
   })
 
