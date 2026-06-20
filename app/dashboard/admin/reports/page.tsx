@@ -65,6 +65,17 @@ function hrefForRange(range: ReportRange, from: string, to: string) {
   return `/dashboard/admin/reports?${params.toString()}`
 }
 
+function hrefForTab(tab: ReportTab, range: ReportRange, from: string, to: string) {
+  const params = new URLSearchParams()
+  params.set("tab", tab)
+  params.set("range", range)
+  if (range === "custom") {
+    if (from) params.set("from", from)
+    if (to) params.set("to", to)
+  }
+  return `/dashboard/admin/reports?${params.toString()}`
+}
+
 export default async function AdminReportsPage({ searchParams }: ReportsPageProps) {
   await requireAdminAccess()
   await dbConnect()
