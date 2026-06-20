@@ -12,7 +12,7 @@ import User from "@/models/User"
 import Vehicle from "@/models/Vehicle"
 import InvestmentPool from "@/models/InvestmentPool"
 
-type ExportType = "deposits" | "investments" | "repayments"
+type ExportType = "deposits" | "investments" | "repayments" | "kyc" | "fleet" | "users"
 type RangeType = "7d" | "30d" | "90d" | "all" | "custom"
 
 function csvEscape(value: unknown): string {
