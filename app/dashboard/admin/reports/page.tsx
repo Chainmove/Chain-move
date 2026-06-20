@@ -97,6 +97,7 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
   const legacyInvestDateMatch = buildDateMatch("date", startDate, endDate)
   const paymentDateMatch = buildDateMatch("createdAt", startDate, endDate)
   const poolsDateMatch = buildDateMatch("createdAt", startDate, endDate)
+  const userDateMatch = buildDateMatch("createdAt", startDate, endDate)
 
   const [depositsAgg, poolInvestAgg, legacyInvestAgg, repaymentsAgg, creditsAgg, poolSummary] = await Promise.all([
     Transaction.aggregate([
