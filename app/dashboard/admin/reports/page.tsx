@@ -253,6 +253,17 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
         </Button>
       </div>
 
+      <div className="flex flex-wrap gap-1 rounded-xl border border-border/60 bg-muted/30 p-1 print:hidden">
+        {(["overview", "kyc", "fleet", "users"] as const).map((t) => (
+          <Link key={t} href={hrefForTab(t, range, from, to)}
+            className={`rounded-lg px-4 py-2 text-sm font-medium capitalize transition-colors ${
+              tab === t ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}>
+            {t === "overview" ? "Overview" : t === "kyc" ? "KYC" : t === "fleet" ? "Fleet" : "Users"}
+          </Link>
+        ))}
+      </div>
+
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card className="border-border/70">
           <CardHeader>
