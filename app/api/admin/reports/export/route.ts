@@ -231,6 +231,8 @@ export async function GET(request: Request) {
     // ── kyc ──────────────────────────────────────────────────────────────
     if (type === "kyc") {
       const kycStatusFilter = searchParams.get("status") || ""
+      const kycQuery: Record<string, unknown> = { kycStatus: { $nin: ["none", null] }, ...dateMatch("createdAt", startDate, endDate) }
+      if (["pending", "approved", "rejected"].includes(kycStatusFilter)) kycQuery.kycStatus = kycStatusFilter
       return NextResponse.json({ message: "KYC export coming soon." }, { status: 501 })
     }
 
