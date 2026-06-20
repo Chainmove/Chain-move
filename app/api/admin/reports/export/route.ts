@@ -266,7 +266,12 @@ export async function GET(request: Request) {
       const uQuery: Record<string, unknown> = { ...dateMatch("createdAt", startDate, endDate) }
       if (["driver", "investor", "admin"].includes(roleFilter)) uQuery.role = roleFilter
       const platformUsers = await User.find(uQuery).select("name fullName email role kycVerified createdAt").sort({ createdAt: -1 }).lean()
-      return NextResponse.json({ message: "Users export coming soon." }, { status: 501 })
+      const usersCsv = toCsv(
+        ["Date Joined", "Name", "Email", "Role", "KYC Verified"],
+        platformUsers.map((u: any) => [u.createdAt ? new Date(u.createdAt).toISOString() : "", getUserName(u), u.email || "", u.role || "", u.kycVerified ? "Yes" : "No"]),
+      )
+      const usersResponse = new NextResponse(usersCsv, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="users-report-${range}.csv"` } })
+      return shouldRefreshSession ? withSessionRefresh(usersResponse, user) : usersResponse
     }
 
     const repayments = await DriverPayment.find({
