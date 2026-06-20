@@ -248,7 +248,16 @@ export async function GET(request: Request) {
 
     // ── fleet ─────────────────────────────────────────────────────────────────
     if (type === "fleet") {
-      return NextResponse.json({ message: "Fleet export coming soon." }, { status: 501 })
+      const vStatusFilter = searchParams.get("vstatus") || ""
+      const vQuery: Record<string, unknown> = {}
+      if (["Available", "Financed", "Reserved", "Maintenance", "Retired"].includes(vStatusFilter)) vQuery.status = vStatusFilter
+      const vehicles = await Vehicle.find(vQuery).select("name identifier type year price status fundingStatus totalFundedAmount addedDate").sort({ addedDate: -1 }).lean()
+      const fleetCsv = toCsv(
+        ["Date Added", "Name", "Identifier", "Type", "Year", "Price (NGN)", "Status", "Funding Status", "Total Funded (NGN)"],
+        vehicles.map((v: any) => [v.addedDate ? new Date(v.addedDate).toISOString() : "", v.name || "", v.identifier || "", v.type || "", v.year || "", Number(v.price || 0), v.status || "", v.fundingStatus || "", Number(v.totalFundedAmount || 0)]),
+      )
+      const fleetResponse = new NextResponse(fleetCsv, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="fleet-report-${range}.csv"` } })
+      return shouldRefreshSession ? withSessionRefresh(fleetResponse, user) : fleetResponse
     }
 
     const repayments = await DriverPayment.find({
