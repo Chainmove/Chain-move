@@ -13,8 +13,8 @@ import { PortfolioActivityCard } from "@/components/dashboard/investor-overview/
 import { InvestorStellarActivityPanel } from "@/components/dashboard/investor-overview/stellar-activity-panel"
 import { WalletsCard } from "@/components/dashboard/investor-overview/wallets-card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardRouteLoading } from "@/components/dashboard/dashboard-route-loading"
+import { DashboardUnauthorized } from "@/components/dashboard/dashboard-unauthorized"
 import { getUserDisplayName, useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { getPrivyFundingErrorMessage, startPrivyFunding } from "@/lib/auth/privy-funding"
@@ -286,21 +286,7 @@ export default function InvestorOverviewPage() {
   }
 
   if (!authUser || authUser.role !== "investor") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Access denied</CardTitle>
-            <CardDescription>You need an investor account to access this dashboard.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => router.push("/signin")} className="w-full">
-              Go to Sign in
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <DashboardUnauthorized requiredRoles={["investor"]} currentRole={authUser?.role} />
   }
 
   return (
