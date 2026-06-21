@@ -43,7 +43,9 @@ export async function requireAuthenticatedUser(
     }
   }
 
-  return authContext
+  // `authContext.user` is guaranteed non-null past the guard above; re-assert it
+  // so callers don't have to null-check the authenticated user.
+  return { ...authContext, user: authContext.user }
 }
 
 export async function finalizeAuthenticatedResponse(

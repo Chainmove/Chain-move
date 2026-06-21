@@ -92,5 +92,5 @@ InvestorVirtualAccountSchema.index({ accountNumber: 1 }, { unique: true, sparse:
 InvestorVirtualAccountSchema.index({ dedicatedAccountId: 1 }, { unique: true, sparse: true })
 InvestorVirtualAccountSchema.index({ investorUserId: 1, status: 1, updatedAt: -1 })
 
-export default mongoose.models.InvestorVirtualAccount ||
-  mongoose.model<IInvestorVirtualAccount>("InvestorVirtualAccount", InvestorVirtualAccountSchema)
+export default (mongoose.models.InvestorVirtualAccount ||
+  mongoose.model<IInvestorVirtualAccount>("InvestorVirtualAccount", InvestorVirtualAccountSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

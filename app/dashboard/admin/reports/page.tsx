@@ -240,16 +240,16 @@ export default async function AdminReportsPage({ searchParams }: ReportsPageProp
 
       <div className="flex flex-wrap gap-2">
         <Button asChild variant={range === "7d" ? "default" : "outline"} size="sm">
-          <Link href={hrefForRange("7d", tab, from, to)}>Last 7 Days</Link>
+          <Link href={hrefForRange("7d", from, to)}>Last 7 Days</Link>
         </Button>
         <Button asChild variant={range === "30d" ? "default" : "outline"} size="sm">
-          <Link href={hrefForRange("30d", tab, from, to)}>Last 30 Days</Link>
+          <Link href={hrefForRange("30d", from, to)}>Last 30 Days</Link>
         </Button>
         <Button asChild variant={range === "90d" ? "default" : "outline"} size="sm">
-          <Link href={hrefForRange("90d", tab, from, to)}>Last 90 Days</Link>
+          <Link href={hrefForRange("90d", from, to)}>Last 90 Days</Link>
         </Button>
         <Button asChild variant={range === "all" ? "default" : "outline"} size="sm">
-          <Link href={hrefForRange("all", tab, from, to)}>All Time</Link>
+          <Link href={hrefForRange("all", from, to)}>All Time</Link>
         </Button>
       </div>
 

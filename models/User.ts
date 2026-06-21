@@ -1,5 +1,14 @@
 import mongoose from "mongoose";
 
+// Loose document type: keeps property access permissive while giving the model
+// a concrete generic so `findById().lean()` resolves to a single document
+// instead of mongoose's broken `Doc[] | Doc` overload union. `_id` is typed
+// `any` (not Document's `unknown`) so `_id.toString()` stays valid.
+export interface IUser {
+  _id: any;
+  [key: string]: any;
+}
+
 const NotificationSchema = new mongoose.Schema(
   {
     id: {
@@ -89,12 +98,6 @@ const UserSchema = new mongoose.Schema(
       sparse: true,
       trim: true,
     },
-    stellarPublicKey: {
-      type: String,
-      unique: true,
-      sparse: true,
-      trim: true,
-    },
     role: {
       type: String,
       enum: ["driver", "investor", "admin"],
@@ -169,6 +172,7 @@ const UserSchema = new mongoose.Schema(
     },
     stellarPublicKey: {
       type: String,
+      unique: true,
       sparse: true,
       trim: true,
       index: true,
@@ -190,4 +194,5 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export default mongoose.models.User || mongoose.model("User", UserSchema);
+export default (mongoose.models.User ||
+  mongoose.model<IUser>("User", UserSchema)) as mongoose.Model<IUser>;

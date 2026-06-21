@@ -58,4 +58,5 @@ const VehicleSchema: Schema = new Schema({
   totalFundedAmount: { type: Number, default: 0 },
 });
 
-export default mongoose.models.Vehicle || mongoose.model<IVehicle>('Vehicle', VehicleSchema);
+export default (mongoose.models.Vehicle ||
+  mongoose.model<IVehicle>('Vehicle', VehicleSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

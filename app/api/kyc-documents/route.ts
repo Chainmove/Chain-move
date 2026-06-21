@@ -82,7 +82,7 @@ export async function GET(request: Request) {
       body = Buffer.from(await upstreamResponse.arrayBuffer())
     }
 
-    const response = new NextResponse(body, {
+    const response = new NextResponse(body as any, {
       status: 200,
       headers: {
         "Cache-Control": "private, no-store, max-age=0",

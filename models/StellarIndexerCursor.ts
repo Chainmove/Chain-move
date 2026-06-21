@@ -33,5 +33,5 @@ const StellarIndexerCursorSchema = new Schema<IStellarIndexerCursor>(
   { timestamps: true },
 )
 
-export default mongoose.models.StellarIndexerCursor ||
-  mongoose.model<IStellarIndexerCursor>("StellarIndexerCursor", StellarIndexerCursorSchema)
+export default (mongoose.models.StellarIndexerCursor ||
+  mongoose.model<IStellarIndexerCursor>("StellarIndexerCursor", StellarIndexerCursorSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

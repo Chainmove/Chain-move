@@ -62,8 +62,8 @@ export function Footer() {
                   key={item.label}
                   href={item.href}
                   aria-label={item.label}
-                  target={item.external ? "_blank" : undefined}
-                  rel={item.external ? "noopener noreferrer" : undefined}
+                  target={(item as any).external ? "_blank" : undefined}
+                  rel={(item as any).external ? "noopener noreferrer" : undefined}
                   className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/25 text-white/85 transition-colors hover:border-white/45 hover:text-white"
                 >
                   <item.icon className="h-5 w-5" />
