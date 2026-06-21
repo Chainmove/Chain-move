@@ -104,5 +104,5 @@ const StellarIndexedEventSchema = new Schema<IStellarIndexedEvent>(
   { _id: false, timestamps: true },
 )
 
-export default mongoose.models.StellarIndexedEvent ||
-  mongoose.model<IStellarIndexedEvent>("StellarIndexedEvent", StellarIndexedEventSchema)
+export default (mongoose.models.StellarIndexedEvent ||
+  mongoose.model<IStellarIndexedEvent>("StellarIndexedEvent", StellarIndexedEventSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

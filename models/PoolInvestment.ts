@@ -62,4 +62,5 @@ const PoolInvestmentSchema: Schema = new Schema(
 
 PoolInvestmentSchema.index({ poolId: 1, userId: 1, createdAt: -1 })
 
-export default mongoose.models.PoolInvestment || mongoose.model<IPoolInvestment>("PoolInvestment", PoolInvestmentSchema)
+export default (mongoose.models.PoolInvestment ||
+  mongoose.model<IPoolInvestment>("PoolInvestment", PoolInvestmentSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

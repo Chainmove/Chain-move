@@ -147,7 +147,7 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return NextResponse.json({ message: "No user changes were provided." }, { status: 400 })
     }
 
-    if (params.id === auth.user._id.toString() && hasRole && role !== "admin") {
+    if (params.id === auth.user!._id.toString() && hasRole && role !== "admin") {
       return NextResponse.json({ message: "You cannot remove your own admin access." }, { status: 403 })
     }
 
@@ -294,7 +294,7 @@ export async function DELETE(request: Request, { params }: RouteContext) {
 
     await dbConnect()
 
-    if (params.id === auth.user._id.toString()) {
+    if (params.id === auth.user!._id.toString()) {
       return NextResponse.json({ message: "You cannot delete your own account." }, { status: 403 })
     }
 

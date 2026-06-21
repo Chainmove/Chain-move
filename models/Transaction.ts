@@ -72,4 +72,5 @@ const TransactionSchema: Schema = new Schema({
   timestamp: { type: Date, default: Date.now },
 })
 
-export default mongoose.models.Transaction || mongoose.model<ITransaction>("Transaction", TransactionSchema)
+export default (mongoose.models.Transaction ||
+  mongoose.model<ITransaction>("Transaction", TransactionSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

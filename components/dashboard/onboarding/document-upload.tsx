@@ -256,10 +256,10 @@ export function DocumentUpload({ onNext, onBack }: DocumentUploadProps) {
                           onDragOver={handleDragOver}
                           onDrop={handleDrop}
                           onClick={() => {
-                            const input = document.createElement("input")
+                            const input = (document as any).createElement("input")
                             input.type = "file"
                             input.accept = "image/*,.pdf"
-                            input.onchange = (e) => {
+                            input.onchange = (e: any) => {
                               const file = (e.target as HTMLInputElement).files?.[0]
                               if (file) handleFileUpload(file)
                             }

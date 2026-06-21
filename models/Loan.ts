@@ -65,4 +65,5 @@ LoanSchema.virtual('remainingAmount').get(function() {
   return Number(loan.requestedAmount || 0) - Number(loan.totalFunded || 0)
 });
 
-export default mongoose.models.Loan || mongoose.model<ILoan>('Loan', LoanSchema);
+export default (mongoose.models.Loan ||
+  mongoose.model<ILoan>('Loan', LoanSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

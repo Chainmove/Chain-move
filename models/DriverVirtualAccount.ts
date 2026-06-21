@@ -100,5 +100,5 @@ DriverVirtualAccountSchema.index({ dedicatedAccountId: 1 }, { unique: true, spar
 DriverVirtualAccountSchema.index({ driverUserId: 1, status: 1, updatedAt: -1 })
 DriverVirtualAccountSchema.index({ contractId: 1, status: 1, updatedAt: -1 })
 
-export default mongoose.models.DriverVirtualAccount ||
-  mongoose.model<IDriverVirtualAccount>("DriverVirtualAccount", DriverVirtualAccountSchema)
+export default (mongoose.models.DriverVirtualAccount ||
+  mongoose.model<IDriverVirtualAccount>("DriverVirtualAccount", DriverVirtualAccountSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

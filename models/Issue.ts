@@ -94,5 +94,5 @@ const IssueSchema = new Schema<IIssue>(
 
 IssueSchema.index({ createdAt: -1, status: 1 })
 
-export default mongoose.models.Issue || mongoose.model<IIssue>("Issue", IssueSchema)
-
+export default (mongoose.models.Issue ||
+  mongoose.model<IIssue>("Issue", IssueSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;
