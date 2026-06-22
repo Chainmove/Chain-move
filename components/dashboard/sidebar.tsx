@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ComponentType } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
+  Activity,
   Calendar,
   Bell,
   Car,
@@ -87,6 +88,7 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
       defaultExpanded: true,
       items: [
         { label: "My Wallet", href: "/dashboard/investor/wallet", icon: Wallet },
+        { label: "Stellar Activity", href: "/dashboard/investor/stellar", icon: Activity },
         { label: "Transaction Ledger", href: "/dashboard/investor/ledger", icon: Receipt },
       ],
     },
@@ -157,6 +159,7 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
         { label: "Activity", href: "/dashboard/admin/activity", icon: Bell },
         { label: "Reports", href: "/dashboard/admin/reports", icon: FileText },
         { label: "Transaction Ledger", href: "/dashboard/admin/ledger", icon: Receipt },
+        { label: "Stellar Ledger", href: "/dashboard/admin/stellar", icon: Activity },
         { label: "Issues", href: "/dashboard/admin/issues", icon: ShieldAlert },
         { label: "Governance", href: "/dashboard/admin/governance", icon: Vote },
       ],
