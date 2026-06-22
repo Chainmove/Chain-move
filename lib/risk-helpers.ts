@@ -1,4 +1,3 @@
-import mongoose from "mongoose"
 
 /**
  * 1. Late Repayments
@@ -54,7 +53,7 @@ export const buildRepeatedFailedTransactionsPipeline = (options?: {
       },
     },
     {
-      $sort: { failedCount: -1 },
+      $sort: { failedCount: -1 as const },
     },
   ]
 }
@@ -117,7 +116,7 @@ export const buildUnderperformingPoolsPipeline = (options?: {
       },
     },
     {
-      $sort: { performanceRatio: 1 },
+      $sort: { performanceRatio: 1 as const },
     },
   ]
 }
