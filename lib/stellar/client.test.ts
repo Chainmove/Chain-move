@@ -2,12 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { getHorizonServer, getSorobanRpcServer, getStellarClient, getStellarNetworkPassphrase } from "./client"
+import {
+  getHorizonServer,
+  getHorizonUrl,
+  getSorobanRpcServer,
+  getStellarClient,
+  getStellarNetworkPassphrase,
+  getStellarRpcUrl,
+} from "./client"
 
 describe("Stellar client helpers", () => {
   const originalEnv = { ...process.env }
 
   beforeEach(() => {
+    process.env.ENABLE_MOCK_STELLAR = "true"
     delete process.env.STELLAR_NETWORK
     delete process.env.STELLAR_HORIZON_URL
     delete process.env.STELLAR_RPC_URL
@@ -23,6 +31,8 @@ describe("Stellar client helpers", () => {
     expect(client.config.network).toBe("testnet")
     expect(client.horizon.serverURL.toString()).toBe("https://horizon-testnet.stellar.org/")
     expect(client.sorobanRpc.serverURL.toString()).toBe("https://soroban-testnet.stellar.org/")
+    expect(getHorizonUrl(client.config)).toBe("https://horizon-testnet.stellar.org")
+    expect(getStellarRpcUrl(client.config)).toBe("https://soroban-testnet.stellar.org")
     expect(client.networkPassphrase).toBe("Test SDF Network ; September 2015")
   })
 
@@ -37,6 +47,6 @@ describe("Stellar client helpers", () => {
   it("rejects invalid network selections", () => {
     process.env.STELLAR_NETWORK = "futurenet"
 
-    expect(() => getStellarClient()).toThrow(/Invalid Stellar network/)
+    expect(() => getStellarClient()).toThrow(/Unsupported STELLAR_NETWORK/)
   })
 })

@@ -12,6 +12,14 @@ export function getStellarNetworkPassphrase(network: StellarNetwork = getStellar
   return parseStellarNetwork(network) === "mainnet" ? Networks.PUBLIC : Networks.TESTNET
 }
 
+export function getHorizonUrl(config: StellarConfig = getStellarConfig()): string {
+  return config.horizonUrl
+}
+
+export function getStellarRpcUrl(config: StellarConfig = getStellarConfig()): string {
+  return config.rpcUrl
+}
+
 /** Creates a Horizon client using ChainMove's selected Stellar network. */
 export function getHorizonServer(config: StellarConfig = getStellarConfig()): Horizon.Server {
   return new Horizon.Server(config.horizonUrl)
