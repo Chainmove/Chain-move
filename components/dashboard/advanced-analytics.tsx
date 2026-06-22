@@ -15,7 +15,7 @@ interface AnalyticsProps {
 export function AdvancedAnalytics({ userRole, userId }: AnalyticsProps) {
   const { state } = usePlatform()
 
-  if (state.isLoading || !state.drivers || !state.investors || !state.vehicles || !state.loanApplications) {
+  if (state.isLoading || !(state as any).drivers || !(state as any).investors || !state.vehicles || !state.loanApplications) {
     return (
       <Card>
         <CardHeader>
@@ -35,8 +35,8 @@ export function AdvancedAnalytics({ userRole, userId }: AnalyticsProps) {
     monthlyGrowth: 12.5, // Simulated
 
     userGrowth: {
-      drivers: state.drivers.length,
-      investors: state.investors.length,
+      drivers: (state as any).drivers.length,
+      investors: (state as any).investors.length,
       growth: 8.3, // Simulated
     },
 
@@ -89,17 +89,17 @@ export function AdvancedAnalytics({ userRole, userId }: AnalyticsProps) {
       const driverTransactions = state.transactions.filter((t) => t.userId === userId)
 
       return {
-        totalBorrowed: driverLoans.reduce((sum, loan) => sum + loan.totalFunded, 0),
+        totalBorrowed: driverLoans.reduce((sum, loan) => sum + (loan.totalFunded ?? 0), 0),
         activeLoans: driverLoans.filter((l) => l.status === "Active").length,
-        completedPayments: state.repaymentSchedules.filter(
-          (r) => driverLoans.some((l) => l.id === r.loanId) && r.status === "Paid",
+        completedPayments: (state as any).repaymentSchedules.filter(
+          (r: any) => driverLoans.some((l) => l.id === r.loanId) && r.status === "Paid",
         ).length,
         creditScore: driverLoans[0]?.creditScore || 0,
         paymentHistory: 96.5, // Simulated
       }
     } else if (userRole === "investor" && userId) {
       const investorInvestments = state.investments.filter((i) => i.investorId === userId)
-      const investor = state.investors.find((i) => i.id === userId)
+      const investor = (state as any).investors.find((i: any) => i.id === userId)
 
       return {
         totalInvested: investorInvestments.reduce((sum, inv) => sum + inv.amount, 0),

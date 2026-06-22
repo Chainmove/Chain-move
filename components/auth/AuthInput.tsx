@@ -1,5 +1,4 @@
-import type { LucideIcon } from "lucide-react"
-import type { InputHTMLAttributes, ReactNode } from "react"
+import type { ComponentType, InputHTMLAttributes, ReactNode } from "react"
 
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -7,7 +6,7 @@ import { cn } from "@/lib/utils"
 interface AuthInputProps extends InputHTMLAttributes<HTMLInputElement> {
   id: string
   label: string
-  icon: LucideIcon
+  icon: ComponentType<{ className?: string }>
   error?: string
   trailing?: ReactNode
   containerClassName?: string

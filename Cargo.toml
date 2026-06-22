@@ -1,0 +1,4 @@
+[workspace]
+members = ["contracts/chainmove-pool"]
+resolver = "2"
+

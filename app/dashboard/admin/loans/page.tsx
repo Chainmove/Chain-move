@@ -20,13 +20,13 @@ export default function AdminLoanManagementPage() {
   // State for loan management
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("pending")
-  const [selectedLoan, setSelectedLoan] = useState(null)
+  const [selectedLoan, setSelectedLoan] = useState<any>(null)
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false)
   const [isActionDialogOpen, setIsActionDialogOpen] = useState(false)
-  const [actionType, setActionType] = useState(null)
+  const [actionType, setActionType] = useState<any>(null)
   const [adminNotes, setAdminNotes] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [loans, setLoans] = useState([])
+  const [loans, setLoans] = useState<any[]>([])
 
   // Fetch loans from database
   const fetchLoans = async () => {
@@ -39,7 +39,7 @@ export default function AdminLoanManagementPage() {
         // Update the platform context for consistency - keep populated objects
         dispatch({
           type: "SET_LOAN_APPLICATIONS",
-          payload: fetchedLoans.map((loan) => ({
+          payload: fetchedLoans.map((loan: any) => ({
             ...loan,
             id: loan._id,
             // Keep the populated objects intact:
@@ -74,13 +74,13 @@ export default function AdminLoanManagementPage() {
   }) || []
 
   // Handle opening the loan details dialog
-  const handleViewDetails = (loan) => {
+  const handleViewDetails = (loan: any) => {
     setSelectedLoan(loan)
     setIsDetailsDialogOpen(true)
   }
 
   // Handle opening the action dialog (approve/reject)
-  const handleAction = (loan, type) => {
+  const handleAction = (loan: any, type: any) => {
     setSelectedLoan(loan)
     setActionType(type)
     setAdminNotes("")
@@ -140,7 +140,7 @@ export default function AdminLoanManagementPage() {
             priority: "high",
             actionUrl: "/dashboard/driver/loan-terms"
           },
-        })
+        } as any)
         
         // Persist notification to database
         try {
@@ -203,7 +203,7 @@ export default function AdminLoanManagementPage() {
 }
 
   // Send email notification
-  const sendEmailNotification = async (email, subject, message) => {
+  const sendEmailNotification = async (email: any, subject: any, message: any) => {
     try {
       const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">

@@ -1,8 +1,4 @@
-import { isValidStellarPublicKey } from "@/lib/validation/stellar"
-
-export const STELLAR_NETWORKS = ["testnet", "mainnet"] as const
-
-export type StellarNetwork = (typeof STELLAR_NETWORKS)[number]
+export type StellarNetwork = "testnet" | "mainnet"
 
 export interface StellarConfig {
   network: StellarNetwork
@@ -27,35 +23,51 @@ type StellarEnvironment = Partial<Record<
   string | undefined
 >>
 
-const NETWORK_DEFAULTS: Record<StellarNetwork, Pick<StellarConfig, "horizonUrl" | "rpcUrl">> = {
+const NETWORK_DEFAULTS: Record<StellarNetwork, Pick<StellarConfig, "horizonUrl" | "rpcUrl" | "explorerBaseUrl">> = {
   testnet: {
     horizonUrl: "https://horizon-testnet.stellar.org",
     rpcUrl: "https://soroban-testnet.stellar.org",
+    explorerBaseUrl: TESTNET_EXPLORER_BASE_URL,
   },
   mainnet: {
     horizonUrl: "https://horizon.stellar.org",
     rpcUrl: "https://soroban-mainnet.stellar.org",
+    explorerBaseUrl: MAINNET_EXPLORER_BASE_URL,
   },
 }
 
-const REQUIRED_DEPLOYMENT_FIELDS = [
-  "STELLAR_ISSUER_PUBLIC_KEY",
-  "STELLAR_DISTRIBUTION_PUBLIC_KEY",
-  "STELLAR_CONTRACT_ID",
-] as const
+/**
+ * Normalizes the deployment network to a supported Stellar network.
+ *
+ * Keeping this validation in the shared config layer means all server clients
+ * select the same endpoints and fail fast instead of silently using Testnet.
+ */
+export function parseStellarNetwork(value: string | undefined): StellarNetwork {
+  const network = value?.trim().toLowerCase() || "testnet"
 
-function value(env: StellarEnvironment, name: keyof StellarEnvironment): string {
-  return env[name]?.trim() ?? ""
+  if (network === "testnet" || network === "mainnet") {
+    return network
+  }
+
+  throw new Error(`Invalid Stellar network "${value}". Expected "testnet" or "mainnet".`)
 }
 
-function isPlaceholder(input: string): boolean {
-  return input.toLowerCase().startsWith("replace_")
-}
+export function getStellarConfig(): StellarConfig {
+  const network = parseStellarNetwork(process.env.STELLAR_NETWORK)
+  const defaults = NETWORK_DEFAULTS[network]
+  const mock = process.env.ENABLE_MOCK_STELLAR === "true"
 
-function parseNetwork(input: string): StellarNetwork {
-  const network = (input || "testnet").toLowerCase()
-  if (!STELLAR_NETWORKS.includes(network as StellarNetwork)) {
-    throw new Error(`Unsupported STELLAR_NETWORK: "${input}". Supported values are testnet and mainnet.`)
+  return {
+    network,
+    horizonUrl: process.env.STELLAR_HORIZON_URL || defaults.horizonUrl,
+    rpcUrl: process.env.STELLAR_RPC_URL || process.env.RPC_URL || defaults.rpcUrl,
+    assetCode: process.env.STELLAR_ASSET_CODE || "CMOVE",
+    issuerPublicKey: process.env.STELLAR_ISSUER_PUBLIC_KEY || "",
+    distributionPublicKey: process.env.STELLAR_DISTRIBUTION_PUBLIC_KEY || "",
+    contractId: process.env.STELLAR_CONTRACT_ID || process.env.CHAINMOVE_CA || "",
+    explorerBaseUrl: process.env.STELLAR_EXPLORER_BASE_URL || defaults.explorerBaseUrl,
+    mock,
+    demoPublicKey: process.env.NEXT_PUBLIC_STELLAR_DEMO_PUBLIC_KEY || process.env.STELLAR_DEMO_PUBLIC_KEY || FALLBACK_DEMO_PUBLIC_KEY,
   }
   return network as StellarNetwork
 }

@@ -1,10 +1,10 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { Resend } from "resend"
 
 import { getSessionFromCookies } from "@/lib/auth/session"
 import dbConnect from "@/lib/dbConnect"
+import { sendEmail } from "@/lib/services/email.service"
 import { logAuditEvent } from "@/lib/security/audit-log"
 import { isSupportedKycDocumentReference } from "@/lib/security/kyc-documents"
 import User from "@/models/User"
@@ -17,7 +17,6 @@ const KYC_NOTIFICATION_LINK: Record<KycUserRole, string> = {
   driver: "/dashboard/driver/kyc/status",
   investor: "/dashboard/investor/kyc/status",
 }
-const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
 
 function normalizeDateInput(value: Date | string | null | undefined) {
   if (!value) return null
@@ -76,11 +75,10 @@ function buildEmailHtml(name: string, message: string) {
 }
 
 async function sendKycEmail(user: any, subject: string, message: string) {
-  if (!resend || !user?.email) return
+  if (!user?.email) return
 
   try {
-    await resend.emails.send({
-      from: "onboarding@chainmove.xyz",
+    await sendEmail({
       to: user.email,
       subject,
       html: buildEmailHtml(user.name || "there", message),

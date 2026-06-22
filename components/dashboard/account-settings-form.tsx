@@ -11,8 +11,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { formatNaira } from "@/lib/currency"
 import { StellarLinkForm } from "@/components/dashboard/stellar-link-form"
+import { formatNaira } from "@/lib/currency"
+import { getWalletDisplay } from "@/lib/wallet/config"
 
 interface AccountSettingsFormProps {
   roleLabel: "Driver" | "Investor"
@@ -38,6 +39,7 @@ interface AccountProfileResponse {
   bio: string | null
   role: string
   walletAddress: string | null
+  stellarPublicKey: string | null
   availableBalance: number
   totalInvested: number
   totalReturns: number
@@ -86,6 +88,7 @@ export function AccountSettingsForm({ roleLabel, kycHref }: AccountSettingsFormP
         bio: authUser.bio || null,
         role: authUser.role || roleLabel.toLowerCase(),
         walletAddress: authUser.walletAddress || null,
+        stellarPublicKey: authUser.stellarPublicKey || null,
         availableBalance: Number(authUser.availableBalance || 0),
         totalInvested: Number(authUser.totalInvested || 0),
         totalReturns: Number(authUser.totalReturns || 0),
@@ -126,6 +129,10 @@ export function AccountSettingsForm({ roleLabel, kycHref }: AccountSettingsFormP
   }, [authUser?.id, loadProfile])
 
   const isEmailManagedExternally = Boolean(profile?.privyUserId || authUser?.privyUserId)
+  const walletDisplay = getWalletDisplay({
+    embeddedWalletAddress: profile?.walletAddress || authUser?.walletAddress,
+    stellarPublicKey: profile?.stellarPublicKey || authUser?.stellarPublicKey,
+  })
 
   const handleSave = async () => {
     if (!form.fullName.trim()) {
@@ -272,7 +279,8 @@ export function AccountSettingsForm({ roleLabel, kycHref }: AccountSettingsFormP
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <div className="rounded-lg border border-border/70 p-3">
               <p><span className="text-foreground">Role:</span> {profile?.role || authUser?.role || roleLabel.toLowerCase()}</p>
-              <p className="mt-1 break-all"><span className="text-foreground">Wallet:</span> {profile?.walletAddress || authUser?.walletAddress || "Not linked"}</p>
+              <p className="mt-1 break-all"><span className="text-foreground">{walletDisplay.addressLabel}:</span> {walletDisplay.address || "Not linked"}</p>
+              <p className="mt-1"><span className="text-foreground">Network:</span> {walletDisplay.networkLabel}</p>
             </div>
             <div className="rounded-lg border border-border/70 p-3">
               <p><span className="text-foreground">Internal balance:</span> {formatNaira(Number(profile?.availableBalance || authUser?.availableBalance || 0))}</p>

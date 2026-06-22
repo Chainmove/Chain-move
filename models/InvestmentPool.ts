@@ -71,4 +71,5 @@ const InvestmentPoolSchema: Schema = new Schema(
   { timestamps: true },
 )
 
-export default mongoose.models.InvestmentPool || mongoose.model<IInvestmentPool>("InvestmentPool", InvestmentPoolSchema)
+export default (mongoose.models.InvestmentPool ||
+  mongoose.model<IInvestmentPool>("InvestmentPool", InvestmentPoolSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

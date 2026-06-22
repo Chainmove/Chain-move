@@ -687,7 +687,7 @@ export async function confirmDriverPayment(
     contract.totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0) + appliedAmountNgn)
     const remainingAfterNgn = computeRemainingBalance(contract.totalPayableNgn, contract.totalPaidNgn)
     contract.status = remainingAfterNgn <= 0 ? "COMPLETED" : "ACTIVE"
-    contract.nextDueDate = contract.status === "COMPLETED" ? null : calculateNextDueDate(contract)
+    contract.nextDueDate = contract.status === "COMPLETED" ? null : calculateNextDueDate(contract as any)
     await contract.save({ session })
 
     const existingRepaymentTx = await Transaction.findOne({

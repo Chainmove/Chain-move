@@ -120,7 +120,7 @@ export const useAdminDashboard = () => {
         isTermSet: false, // New field
       };
 
-      await addVehicle(vehicleData as Omit<Vehicle, '_id'>);
+      await addVehicle(vehicleData as unknown as Omit<Vehicle, '_id'>);
 
       toast({
         title: "Vehicle Added",
