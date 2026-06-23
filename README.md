@@ -225,6 +225,7 @@ If Paystack DVA eligibility for the business requires additional customer identi
 
 ## Stellar References
 
+- [ChainMove `stellar.toml` Plan](docs/stellar-toml.md)
 - [Stellar Networks](https://developers.stellar.org/docs/networks)
 - [Stellar Contract SDKs](https://developers.stellar.org/docs/tools/sdks/contract-sdks)
 - [Publishing Stellar Asset Information](https://developers.stellar.org/docs/tokens/publishing-asset-info)
