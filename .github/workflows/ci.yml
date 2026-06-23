@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,32 +16,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality-checks:
-    name: Lint and build
+  pull-request-checks:
+    name: Pull request checks
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
-    # Keep this list aligned with the repository secrets currently configured.
-    # Do not add STELLAR_* variables here until those secrets exist in GitHub/Vercel.
+    # Pull requests intentionally receive no repository secrets. These inert
+    # values keep build-time validation deterministic, including for forks.
     env:
-      ACCOUNT_FACTORY_ADDRESS: ${{ secrets.ACCOUNT_FACTORY_ADDRESS }}
-      ALGORITHM: ${{ secrets.ALGORITHM }}
-      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
-      CHAINMOVE_CA: ${{ secrets.CHAINMOVE_CA }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
-      NEXT_PUBLIC_PRIVY_APP_ID: ${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
-      PAYSTACK_PUBLIC_KEY: ${{ secrets.PAYSTACK_PUBLIC_KEY }}
-      PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY }}
-      PRIVY_APP_SECRET: ${{ secrets.PRIVY_APP_SECRET }}
-      PRIVY_JWKS_URL: ${{ secrets.PRIVY_JWKS_URL }}
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-      RPC_URL: ${{ secrets.RPC_URL }}
-      SECRET_KEY_HEX: ${{ secrets.SECRET_KEY_HEX }}
-      THIRDWEB_CLIENT_ID: ${{ secrets.THIRDWEB_CLIENT_ID }}
-      THIRDWEB_SECRET_KEY: ${{ secrets.THIRDWEB_SECRET_KEY }}
-      TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
-      TREASURY_PK_KEY: ${{ secrets.TREASURY_PK_KEY }}
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      MONGODB_URI: mongodb://localhost:27017/chainmove-ci
+      JWT_SECRET: ci-only-placeholder-not-used-in-production
       ENABLE_MOCK_PAYMENTS: "true"
       ENABLE_MOCK_EMAILS: "true"
       ENABLE_MOCK_STELLAR: "true"
@@ -64,8 +49,54 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: TypeScript check if configured
-        run: npm run typecheck --if-present
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  main-branch-checks:
+    name: Main branch checks
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # Secret-backed values are restricted to trusted main-branch runs. Private
+    # signing and deployment credentials are not needed by CI and stay omitted.
+    env:
+      NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      NEXT_PUBLIC_PRIVY_APP_ID: ${{ secrets.NEXT_PUBLIC_PRIVY_APP_ID }}
+      PRIVY_APP_SECRET: ${{ secrets.PRIVY_APP_SECRET }}
+      PRIVY_JWKS_URL: ${{ secrets.PRIVY_JWKS_URL }}
+      PAYSTACK_PUBLIC_KEY: ${{ secrets.PAYSTACK_PUBLIC_KEY }}
+      PAYSTACK_SECRET_KEY: ${{ secrets.PAYSTACK_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+      ENABLE_MOCK_PAYMENTS: "true"
+      ENABLE_MOCK_EMAILS: "true"
+      ENABLE_MOCK_STELLAR: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
