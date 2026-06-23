@@ -13,6 +13,8 @@ pub enum ContractError {
     PoolAlreadyExists = 2,
     PoolNotFound = 3,
     InvestorPositionNotFound = 4,
+    Oversubscribed = 5,
+    PoolInactive = 6,
 }
 
 #[contracttype]
@@ -21,6 +23,7 @@ pub struct Pool {
     pub id: u64,
     pub owner: Address,
     pub asset_label: String,
+    pub total_units: u64,
     pub target_amount: i128,
     pub total_invested: i128,
     pub total_repaid: i128,
@@ -50,11 +53,12 @@ impl ChainMovePoolContract {
         owner: Address,
         pool_id: u64,
         asset_label: String,
+        total_units: u64,
         target_amount: i128,
     ) -> Result<Pool, ContractError> {
         owner.require_auth();
 
-        if pool_id == 0 || target_amount <= 0 || asset_label.is_empty() {
+        if pool_id == 0 || total_units == 0 || target_amount <= 0 || asset_label.is_empty() {
             return Err(ContractError::InvalidInput);
         }
 
@@ -67,6 +71,7 @@ impl ChainMovePoolContract {
             id: pool_id,
             owner,
             asset_label,
+            total_units,
             target_amount,
             total_invested: 0,
             total_repaid: 0,
@@ -96,6 +101,14 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&pool_key)
             .ok_or(ContractError::PoolNotFound)?;
+
+        if !pool.active {
+            return Err(ContractError::PoolInactive);
+        }
+
+        if pool.total_invested + amount > pool.target_amount {
+            return Err(ContractError::Oversubscribed);
+        }
 
         pool.total_invested += amount;
         env.storage().persistent().set(&pool_key, &pool);
@@ -152,6 +165,56 @@ impl ChainMovePoolContract {
         env.storage().persistent().set(&position_key, &position);
 
         Ok(position)
+    }
+
+    /// Returns investor share in basis points (bps): invested * 10_000 / target_amount.
+    pub fn get_investor_share(
+        env: Env,
+        investor: Address,
+        pool_id: u64,
+    ) -> Result<u64, ContractError> {
+        if pool_id == 0 {
+            return Err(ContractError::InvalidInput);
+        }
+
+        let pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Pool(pool_id))
+            .ok_or(ContractError::PoolNotFound)?;
+
+        let position: InvestorPosition = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvestorPosition(pool_id, investor))
+            .ok_or(ContractError::InvestorPositionNotFound)?;
+
+        if pool.target_amount == 0 {
+            return Err(ContractError::InvalidInput);
+        }
+
+        let share_bps = (position.invested * 10_000 / pool.target_amount) as u64;
+        Ok(share_bps)
+    }
+
+    /// Marks a pool inactive so no further investments are accepted.
+    pub fn close_pool(env: Env, owner: Address, pool_id: u64) -> Result<Pool, ContractError> {
+        owner.require_auth();
+
+        if pool_id == 0 {
+            return Err(ContractError::InvalidInput);
+        }
+
+        let key = DataKey::Pool(pool_id);
+        let mut pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(ContractError::PoolNotFound)?;
+
+        pool.active = false;
+        env.storage().persistent().set(&key, &pool);
+        Ok(pool)
     }
 
     pub fn read_pool(env: Env, pool_id: u64) -> Result<Pool, ContractError> {
