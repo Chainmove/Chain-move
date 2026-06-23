@@ -1,6 +1,7 @@
-import { AlertTriangle, Calendar, CheckCircle, Receipt } from "lucide-react"
+import { AlertTriangle, Calendar, CheckCircle, Receipt, TrendingUp } from "lucide-react"
 
 import { formatNaira } from "@/lib/currency"
+import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import type { DriverContractSnapshot } from "@/lib/services/driver-contracts.service"
 
@@ -69,9 +70,7 @@ export function ContractSummaryCard({ contract, className }: ContractSummaryCard
           <p className="text-xs text-muted-foreground">Repayment Progress</p>
           <p className="text-xs font-semibold text-foreground">{progressPercent}%</p>
         </div>
-        <div className="h-2 rounded-full bg-muted">
-          <div className="h-2 rounded-full bg-emerald-600 dark:bg-emerald-500" style={{ width: `${progressPercent}%` }} />
-        </div>
+        <Progress value={progressPercent} className="h-2" />
         <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground sm:grid-cols-2">
           <p className="inline-flex items-center">
             <Receipt className="mr-1.5 h-3.5 w-3.5" />
@@ -82,6 +81,24 @@ export function ContractSummaryCard({ contract, className }: ContractSummaryCard
             Next due: {formatDateLabel(contract.nextDueDate)}
           </p>
         </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <article className="rounded-[10px] border border-border/70 px-3 py-3">
+          <p className="text-xs text-muted-foreground">Total contract</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{formatNaira(contract.totalPayableNgn)}</p>
+        </article>
+        <article className="rounded-[10px] border border-border/70 px-3 py-3">
+          <p className="text-xs text-muted-foreground">Outstanding</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{formatNaira(contract.remainingBalanceNgn)}</p>
+        </article>
+        <article className="rounded-[10px] border border-border/70 px-3 py-3">
+          <p className="inline-flex items-center text-xs text-muted-foreground">
+            <TrendingUp className="mr-1 h-3.5 w-3.5" />
+            Ownership
+          </p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{progressPercent}% complete</p>
+        </article>
       </div>
     </section>
   )

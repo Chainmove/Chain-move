@@ -74,11 +74,13 @@ export function DriverPaymentsTable({ payments, emptyLabel = "No payment records
               <div>
                 <p className="text-xs text-muted-foreground">{formatDateLabel(payment.createdAt)}</p>
                 <p className="mt-1 text-sm font-semibold">{formatNaira(payment.amountNgn)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Applied: {formatNaira(payment.appliedAmountNgn)}</p>
               </div>
               {renderStatusBadge(payment.status)}
             </div>
             <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
               <p>Method: {payment.method}</p>
+              {payment.overpaymentNgn > 0 ? <p>Overpayment credited: {formatNaira(payment.overpaymentNgn)}</p> : null}
               <p className="truncate">Reference: {payment.paystackRef}</p>
             </div>
           </article>
@@ -91,6 +93,8 @@ export function DriverPaymentsTable({ payments, emptyLabel = "No payment records
             <TableRow>
               <TableHead>Date</TableHead>
               <TableHead>Amount</TableHead>
+              <TableHead>Applied</TableHead>
+              <TableHead>Overpayment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Method</TableHead>
               <TableHead>Reference</TableHead>
@@ -101,6 +105,8 @@ export function DriverPaymentsTable({ payments, emptyLabel = "No payment records
               <TableRow key={payment.id}>
                 <TableCell className="text-xs">{formatDateLabel(payment.createdAt)}</TableCell>
                 <TableCell className="font-medium">{formatNaira(payment.amountNgn)}</TableCell>
+                <TableCell>{formatNaira(payment.appliedAmountNgn)}</TableCell>
+                <TableCell>{payment.overpaymentNgn > 0 ? formatNaira(payment.overpaymentNgn) : "—"}</TableCell>
                 <TableCell>{renderStatusBadge(payment.status)}</TableCell>
                 <TableCell className="text-xs">{payment.method}</TableCell>
                 <TableCell className="max-w-[160px] truncate text-xs text-muted-foreground">{payment.paystackRef}</TableCell>
