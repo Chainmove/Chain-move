@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { ArrowRight, Wallet } from "lucide-react"
+import { AlertTriangle, ArrowRight, CheckCircle2, Wallet } from "lucide-react"
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardHeader } from "@/components/dashboard/investor-overview/dashboard-header"
@@ -8,9 +8,12 @@ import { ContractSummaryCard } from "@/components/dashboard/driver-hire-purchase
 import { DriverPaymentForm } from "@/components/dashboard/driver-hire-purchase/driver-payment-form"
 import { DriverPaymentsTable } from "@/components/dashboard/driver-hire-purchase/driver-payments-table"
 import { DriverVirtualAccountCard } from "@/components/dashboard/driver-hire-purchase/driver-virtual-account-card"
+import { RepaymentScheduleTable } from "@/components/dashboard/driver-hire-purchase/repayment-schedule-table"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import dbConnect from "@/lib/dbConnect"
+import { formatNaira } from "@/lib/currency"
 import { getSessionFromCookies } from "@/lib/auth/session"
 import { getDriverContract, getDriverPayments } from "@/lib/services/driver-contracts.service"
 import { getOrProvisionDriverVirtualAccount } from "@/lib/services/paystack-dva.service"
@@ -61,7 +64,7 @@ export default async function DriverRepaymentPage() {
             <CardHeader>
               <CardTitle>No Active Contract</CardTitle>
               <CardDescription>
-                A repayment contract must be assigned before you can make payments.
+                No active hire-purchase contract is assigned to your driver account yet. Once a contract is assigned, this repayment center will show your vehicle, schedule, arrears, and ownership progress.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -132,7 +135,7 @@ export default async function DriverRepaymentPage() {
             <div>
               <h2 className="text-xl font-semibold leading-tight text-foreground md:text-2xl">Repayment Center</h2>
               <p className="mt-2 text-sm text-muted-foreground">
-                Make weekly fiat NGN repayments for your hire-purchase contract.
+                Track your active contract, repayment schedule, arrears, overpayments, and ownership progress.
               </p>
             </div>
             <Button asChild variant="outline" className="h-10 w-full sm:w-auto">
@@ -144,6 +147,37 @@ export default async function DriverRepaymentPage() {
           </div>
         </section>
 
+
+        {contract.arrears.status === "LATE" ? (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Late repayment status</AlertTitle>
+            <AlertDescription>
+              {contract.arrears.overdueInstallments} installment(s) are overdue with {formatNaira(contract.arrears.arrearsAmountNgn)} in arrears.
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert className="border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-200">
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertTitle>{contract.arrears.status === "COMPLETED" ? "Ownership completed" : "Repayments current"}</AlertTitle>
+            <AlertDescription>
+              {contract.arrears.status === "COMPLETED"
+                ? "Your contract has been fully repaid."
+                : "No missed or late installments are currently due for this contract."}
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {contract.overpaymentNgn > 0 ? (
+          <Alert>
+            <Wallet className="h-4 w-4" />
+            <AlertTitle>Overpayment recorded</AlertTitle>
+            <AlertDescription>
+              {formatNaira(contract.overpaymentNgn)} has been received above the contract amount and is displayed safely as unapplied value.
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.1fr_0.9fr]">
           <ContractSummaryCard contract={contract} />
           <DriverVirtualAccountCard
@@ -152,6 +186,14 @@ export default async function DriverRepaymentPage() {
             remainingBalanceNgn={contract.remainingBalanceNgn}
             nextPaymentAmountNgn={contract.nextPaymentAmountNgn || contract.weeklyPaymentNgn}
           />
+        </section>
+
+        <section className="rounded-[10px] border border-border/70 bg-card p-4 md:p-5">
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-foreground">Repayment Schedule</h3>
+            <p className="mt-1 text-sm text-muted-foreground">Expected weekly installments, applied payments, remaining amounts, and late status.</p>
+          </div>
+          <RepaymentScheduleTable schedule={contract.schedule} />
         </section>
 
         <section className="rounded-[10px] border border-dashed border-border/70 bg-card/70 p-4 md:p-5">
