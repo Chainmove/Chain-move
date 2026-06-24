@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="520" viewBox="0 0 1160 520" role="img" aria-labelledby="title desc">
+  <title id="title">ChainMove pool generated build output</title>
+  <desc id="desc">Terminal screenshot showing cargo build output and generated contract artifacts.</desc>
+  <rect width="1160" height="520" fill="#0f172a"/>
+  <rect x="24" y="24" width="1112" height="472" rx="8" fill="#111827" stroke="#334155"/>
+  <circle cx="52" cy="52" r="7" fill="#ef4444"/>
+  <circle cx="76" cy="52" r="7" fill="#f59e0b"/>
+  <circle cx="100" cy="52" r="7" fill="#22c55e"/>
+  <text x="36" y="96" fill="#e5e7eb" font-family="monospace" font-size="24">/workspaces/Chain-move $ cargo build -p chainmove-pool</text>
+  <text x="36" y="150" fill="#94a3b8" font-family="monospace" font-size="22">Compiling chainmove-pool v0.1.0 (/workspaces/Chain-move/contracts/chainmove-pool)</text>
+  <text x="36" y="186" fill="#86efac" font-family="monospace" font-size="22">Finished `dev` profile [unoptimized + debuginfo] target(s) in 57.42s</text>
+  <text x="36" y="250" fill="#e5e7eb" font-family="monospace" font-size="24">Generated artifacts:</text>
+  <text x="36" y="304" fill="#bfdbfe" font-family="monospace" font-size="22">target/debug/libchainmove_pool.rlib</text>
+  <text x="36" y="340" fill="#bfdbfe" font-family="monospace" font-size="22">target/debug/libchainmove_pool.so</text>
+  <text x="36" y="376" fill="#bfdbfe" font-family="monospace" font-size="22">target/debug/deps/libchainmove_pool.rlib</text>
+  <text x="36" y="412" fill="#bfdbfe" font-family="monospace" font-size="22">target/debug/deps/libchainmove_pool.so</text>
+</svg>
+

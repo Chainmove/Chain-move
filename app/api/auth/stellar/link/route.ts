@@ -42,7 +42,11 @@ export async function POST(request: Request) {
       )
     }
 
+    const isFirstLink = !user.stellarPublicKey
     user.stellarPublicKey = stellarPublicKey
+    if (isFirstLink) {
+      user.stellarLinkedAt = new Date()
+    }
 
     try {
       await user.save()

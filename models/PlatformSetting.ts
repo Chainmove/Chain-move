@@ -50,6 +50,5 @@ const PlatformSettingSchema = new Schema<IPlatformSetting>(
   { timestamps: true },
 )
 
-export default mongoose.models.PlatformSetting ||
-  mongoose.model<IPlatformSetting>("PlatformSetting", PlatformSettingSchema)
-
+export default (mongoose.models.PlatformSetting ||
+  mongoose.model<IPlatformSetting>("PlatformSetting", PlatformSettingSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

@@ -105,6 +105,31 @@ describe("POST /api/auth/stellar/link", () => {
     expect(Object.prototype.hasOwnProperty.call(payload.user, "save")).toBe(false)
   })
 
+  it("sets stellarLinkedAt on the first link", async () => {
+    const user = buildUser()
+    getAuthenticatedUser.mockResolvedValue({ user, shouldRefreshSession: false })
+    findOne.mockReturnValue(selectResolving(null))
+
+    const before = Date.now()
+    await callRoute({ stellarPublicKey: VALID_KEY })
+    const after = Date.now()
+
+    expect(user.stellarLinkedAt).toBeInstanceOf(Date)
+    expect((user.stellarLinkedAt as Date).getTime()).toBeGreaterThanOrEqual(before)
+    expect((user.stellarLinkedAt as Date).getTime()).toBeLessThanOrEqual(after)
+  })
+
+  it("does not overwrite stellarLinkedAt when re-linking", async () => {
+    const existingLinkedAt = new Date("2024-01-01")
+    const user = buildUser({ stellarPublicKey: VALID_KEY, stellarLinkedAt: existingLinkedAt })
+    getAuthenticatedUser.mockResolvedValue({ user, shouldRefreshSession: false })
+    findOne.mockReturnValue(selectResolving({ _id: { toString: () => "user-1" } }))
+
+    await callRoute({ stellarPublicKey: OTHER_VALID_KEY })
+
+    expect(user.stellarLinkedAt).toBe(existingLinkedAt)
+  })
+
   it("allows the same user to re-link their own account", async () => {
     const user = buildUser()
     getAuthenticatedUser.mockResolvedValue({ user, shouldRefreshSession: false })

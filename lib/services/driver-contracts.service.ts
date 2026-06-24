@@ -11,6 +11,24 @@ import User from "@/models/User"
 type ContractStatus = "ACTIVE" | "COMPLETED" | "DEFAULTED"
 type DriverPaymentStatus = "PENDING" | "CONFIRMED" | "FAILED"
 
+export type RepaymentScheduleStatus = "PAID" | "PARTIAL" | "LATE" | "UPCOMING"
+
+export interface DriverRepaymentScheduleItem {
+  installmentNumber: number
+  dueDate: string
+  expectedAmountNgn: number
+  paidAmountNgn: number
+  remainingAmountNgn: number
+  status: RepaymentScheduleStatus
+}
+
+export interface DriverArrearsSummary {
+  status: "CURRENT" | "LATE" | "COMPLETED"
+  overdueInstallments: number
+  arrearsAmountNgn: number
+  oldestOverdueDate: string | null
+}
+
 export interface DriverContractSnapshot {
   id: string
   driverUserId: string
@@ -30,6 +48,9 @@ export interface DriverContractSnapshot {
   progressRatio: number
   nextDueDate: string | null
   nextPaymentAmountNgn: number
+  schedule: DriverRepaymentScheduleItem[]
+  arrears: DriverArrearsSummary
+  overpaymentNgn: number
 }
 
 export interface DriverPaymentSnapshot {
@@ -44,6 +65,7 @@ export interface DriverPaymentSnapshot {
   status: DriverPaymentStatus
   confirmedAt: string | null
   failedReason: string | null
+  overpaymentNgn: number
   createdAt: string
 }
 
@@ -113,6 +135,67 @@ function computeProgressRatio(totalPayableNgn: number, totalPaidNgn: number) {
   return Math.min(Math.max(totalPaidNgn / totalPayableNgn, 0), 1)
 }
 
+function buildRepaymentSchedule(contract: {
+  startDate: Date | string
+  weeklyPaymentNgn: number
+  durationWeeks: number
+  totalPaidNgn: number
+  totalPayableNgn: number
+}, now = new Date()): DriverRepaymentScheduleItem[] {
+  const startDate = new Date(contract.startDate)
+  const weeklyPaymentNgn = clampToNonNegative(Number(contract.weeklyPaymentNgn || 0))
+  const durationWeeks = Math.max(0, Math.floor(Number(contract.durationWeeks || 0)))
+  const totalPayableNgn = clampToNonNegative(Number(contract.totalPayableNgn || 0))
+  let remainingPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0))
+
+  if (Number.isNaN(startDate.getTime()) || weeklyPaymentNgn <= 0 || durationWeeks <= 0 || totalPayableNgn <= 0) {
+    return []
+  }
+
+  return Array.from({ length: durationWeeks }, (_, index) => {
+    const installmentNumber = index + 1
+    const dueDate = new Date(startDate)
+    dueDate.setDate(dueDate.getDate() + installmentNumber * 7)
+    const scheduledCap = index === durationWeeks - 1 ? totalPayableNgn - weeklyPaymentNgn * index : weeklyPaymentNgn
+    const expectedAmountNgn = clampToNonNegative(Math.min(weeklyPaymentNgn, scheduledCap))
+    const paidAmountNgn = Math.min(expectedAmountNgn, remainingPaidNgn)
+    remainingPaidNgn = clampToNonNegative(remainingPaidNgn - paidAmountNgn)
+    const remainingAmountNgn = clampToNonNegative(expectedAmountNgn - paidAmountNgn)
+    const isPastDue = dueDate.getTime() < now.getTime()
+    const status: RepaymentScheduleStatus = remainingAmountNgn <= 0
+      ? "PAID"
+      : isPastDue && paidAmountNgn > 0
+        ? "PARTIAL"
+        : isPastDue
+          ? "LATE"
+          : "UPCOMING"
+
+    return {
+      installmentNumber,
+      dueDate: dueDate.toISOString(),
+      expectedAmountNgn,
+      paidAmountNgn,
+      remainingAmountNgn,
+      status,
+    }
+  })
+}
+
+function computeArrearsSummary(schedule: DriverRepaymentScheduleItem[], contractStatus: ContractStatus): DriverArrearsSummary {
+  if (contractStatus === "COMPLETED") {
+    return { status: "COMPLETED", overdueInstallments: 0, arrearsAmountNgn: 0, oldestOverdueDate: null }
+  }
+
+  const overdueRows = schedule.filter((item) => item.status === "LATE" || item.status === "PARTIAL")
+  const arrearsAmountNgn = overdueRows.reduce((sum, item) => sum + item.remainingAmountNgn, 0)
+  return {
+    status: overdueRows.length > 0 ? "LATE" : "CURRENT",
+    overdueInstallments: overdueRows.length,
+    arrearsAmountNgn,
+    oldestOverdueDate: overdueRows[0]?.dueDate || null,
+  }
+}
+
 function calculateNextDueDate(contract: {
   startDate: Date
   weeklyPaymentNgn: number
@@ -139,6 +222,9 @@ function mapContractSnapshot(contract: any): DriverContractSnapshot {
   const totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0))
   const remainingBalanceNgn = computeRemainingBalance(totalPayableNgn, totalPaidNgn)
   const weeklyPaymentNgn = clampToNonNegative(Number(contract.weeklyPaymentNgn || 0))
+  const overpaymentNgn = clampToNonNegative(totalPaidNgn - totalPayableNgn)
+  const schedule = buildRepaymentSchedule(contract)
+  const arrears = computeArrearsSummary(schedule, contract.status)
 
   return {
     id: contract._id.toString(),
@@ -159,6 +245,9 @@ function mapContractSnapshot(contract: any): DriverContractSnapshot {
     progressRatio: computeProgressRatio(totalPayableNgn, totalPaidNgn),
     nextDueDate: toIsoDate(contract.nextDueDate),
     nextPaymentAmountNgn: Math.min(weeklyPaymentNgn, remainingBalanceNgn),
+    schedule,
+    arrears,
+    overpaymentNgn,
   }
 }
 
@@ -175,6 +264,7 @@ function mapDriverPaymentSnapshot(payment: any): DriverPaymentSnapshot {
     status: payment.status,
     confirmedAt: toIsoDate(payment.confirmedAt),
     failedReason: payment.failedReason || null,
+    overpaymentNgn: clampToNonNegative(Number(payment.amountNgn || 0) - Number(payment.appliedAmountNgn || 0)),
     createdAt: toIsoDate(payment.createdAt) || new Date(0).toISOString(),
   }
 }
@@ -687,7 +777,7 @@ export async function confirmDriverPayment(
     contract.totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0) + appliedAmountNgn)
     const remainingAfterNgn = computeRemainingBalance(contract.totalPayableNgn, contract.totalPaidNgn)
     contract.status = remainingAfterNgn <= 0 ? "COMPLETED" : "ACTIVE"
-    contract.nextDueDate = contract.status === "COMPLETED" ? null : calculateNextDueDate(contract)
+    contract.nextDueDate = contract.status === "COMPLETED" ? null : calculateNextDueDate(contract as any)
     await contract.save({ session })
 
     const existingRepaymentTx = await Transaction.findOne({

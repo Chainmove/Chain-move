@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server"
-import { Resend } from "resend"
 import { z } from "zod"
 
 import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
 import { parseJsonBody } from "@/lib/api/validation"
 import { logAuditEvent } from "@/lib/security/audit-log"
 import { buildRateLimitKey, consumeRateLimit, getClientIpAddress, rateLimitExceededResponse } from "@/lib/security/rate-limit"
+import {
+  EmailConfigurationError,
+  EmailDeliveryError,
+  sendEmail,
+  type SendEmailResult,
+} from "@/lib/services/email.service"
 
 function normalizeRecipients(value: unknown) {
   const items = Array.isArray(value) ? value : [value]
@@ -27,11 +32,6 @@ const bodySchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.RESEND_API_KEY
-    if (!apiKey) {
-      return NextResponse.json({ error: "Email service is not configured" }, { status: 500 })
-    }
-
     const authContext = await requireAuthenticatedUser(request, ["admin"], {
       forbiddenMessage: "Admin access required",
     })
@@ -65,15 +65,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Email content is required" }, { status: 400 })
     }
 
-    const resend = new Resend(apiKey)
-    const { data, error } = await resend.emails.send({
-      from: "onboarding@chainmove.xyz",
-      to: recipients,
-      subject,
-      html,
-    })
+    let data: SendEmailResult
+    try {
+      data = await sendEmail({ to: recipients, subject, html })
+    } catch (error) {
+      if (error instanceof EmailConfigurationError) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      if (!(error instanceof EmailDeliveryError)) throw error
 
-    if (error) {
       console.error("RESEND_EMAIL_ERROR", error)
       await logAuditEvent({
         actor: authContext.user,
@@ -99,6 +99,7 @@ export async function POST(request: Request) {
       metadata: {
         recipientsCount: recipients.length,
         subject,
+        mocked: data.mocked,
       },
     })
 

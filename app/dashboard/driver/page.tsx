@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatNaira } from "@/lib/currency"
 import dbConnect from "@/lib/dbConnect"
-import { getSessionFromCookies } from "@/lib/auth/session"
+import { requireDashboardSession } from "@/lib/auth/dashboard-guard"
 import { getDriverContract, getDriverPayments } from "@/lib/services/driver-contracts.service"
 import User from "@/models/User"
 
@@ -36,16 +36,12 @@ function formatDateLabel(value: string | null) {
 }
 
 export default async function DriverDashboardPage() {
-  const session = await getSessionFromCookies()
-  if (!session?.userId) {
-    redirect("/signin")
-  }
+  const session = await requireDashboardSession("driver")
 
   await dbConnect()
-  const user = await User.findById(session.userId)
-    .select("name fullName email role")
+  const user = await User.findById(session.userId).select("name fullName email role")
 
-  if (!user || user.role !== "driver") {
+  if (!user) {
     redirect("/signin")
   }
 

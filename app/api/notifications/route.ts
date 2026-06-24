@@ -8,6 +8,8 @@ import Notification from "@/models/Notification"
 import User from "@/models/User"
 import { logAuditEvent } from "@/lib/security/audit-log"
 import { buildRateLimitKey, consumeRateLimit, getClientIpAddress, rateLimitExceededResponse } from "@/lib/security/rate-limit"
+import { ACTIVITY_CATEGORIES, inferActivityCategory } from "@/lib/activity"
+import { createActivity } from "@/lib/services/activity.service"
 
 const querySchema = z.object({
   userId: z.string().trim().regex(/^[a-f\d]{24}$/i, "Invalid userId.").optional(),
@@ -19,6 +21,7 @@ const bodySchema = z.object({
   title: z.string().trim().min(1).max(160),
   message: z.string().trim().min(1).max(2000),
   type: z.string().trim().min(1).max(80).default("info"),
+  category: z.enum(ACTIVITY_CATEGORIES).optional(),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
   actionUrl: z
     .string()
@@ -54,12 +57,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
-    const notification = await Notification.create({
+    const notification = await createActivity({
       userId: body.data.userId,
-      createdBy: authContext.user._id,
+      createdBy: authContext.user._id.toString(),
       title: body.data.title,
       message: body.data.message,
       type: body.data.type,
+      category: body.data.category || inferActivityCategory(body.data.type),
       priority: body.data.priority,
       link: body.data.actionUrl,
     })

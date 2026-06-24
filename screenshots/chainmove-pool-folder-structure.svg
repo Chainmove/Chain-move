@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="620" viewBox="0 0 1160 620" role="img" aria-labelledby="title desc">
+  <title id="title">ChainMove pool contract folder structure</title>
+  <desc id="desc">Terminal screenshot showing files added under contracts/chainmove-pool.</desc>
+  <rect width="1160" height="620" fill="#0f172a"/>
+  <rect x="24" y="24" width="1112" height="572" rx="8" fill="#111827" stroke="#334155"/>
+  <circle cx="52" cy="52" r="7" fill="#ef4444"/>
+  <circle cx="76" cy="52" r="7" fill="#f59e0b"/>
+  <circle cx="100" cy="52" r="7" fill="#22c55e"/>
+  <text x="36" y="96" fill="#e5e7eb" font-family="monospace" font-size="24">/workspaces/Chain-move $ find contracts/chainmove-pool -maxdepth 3 -type f | sort</text>
+  <text x="36" y="150" fill="#bfdbfe" font-family="monospace" font-size="22">contracts/chainmove-pool/Cargo.toml</text>
+  <text x="36" y="186" fill="#bfdbfe" font-family="monospace" font-size="22">contracts/chainmove-pool/README.md</text>
+  <text x="36" y="222" fill="#bfdbfe" font-family="monospace" font-size="22">contracts/chainmove-pool/src/lib.rs</text>
+  <text x="36" y="258" fill="#bfdbfe" font-family="monospace" font-size="22">contracts/chainmove-pool/src/test.rs</text>
+  <text x="36" y="312" fill="#c4b5fd" font-family="monospace" font-size="22">contracts/chainmove-pool/test_snapshots/test/creates_pool_and_reads_pool_data.1.json</text>
+  <text x="36" y="348" fill="#c4b5fd" font-family="monospace" font-size="22">contracts/chainmove-pool/test_snapshots/test/records_investment_and_reads_investor_position.1.json</text>
+  <text x="36" y="384" fill="#c4b5fd" font-family="monospace" font-size="22">contracts/chainmove-pool/test_snapshots/test/records_repayment_against_pool_and_position.1.json</text>
+  <text x="36" y="420" fill="#c4b5fd" font-family="monospace" font-size="22">contracts/chainmove-pool/test_snapshots/test/rejects_invalid_input.1.json</text>
+  <text x="36" y="492" fill="#e5e7eb" font-family="monospace" font-size="22">Workspace root also includes Cargo.toml and Cargo.lock.</text>
+  <text x="36" y="528" fill="#86efac" font-family="monospace" font-size="22">Contract marked prototype/testnet in README.md.</text>
+</svg>
+

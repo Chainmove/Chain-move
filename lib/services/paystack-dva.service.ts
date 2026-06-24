@@ -264,7 +264,7 @@ async function createOrUpdatePaystackCustomer(input: {
       },
     )
 
-    return updatedCustomer.data
+    return updatedCustomer!.data
   }
 
   const createdCustomer = await paystackRequest<PaystackCustomerRecord>("/customer", {
@@ -278,7 +278,7 @@ async function createOrUpdatePaystackCustomer(input: {
     },
   })
 
-  return createdCustomer.data
+  return createdCustomer!.data
 }
 
 async function listDedicatedAccountsForCustomer(customerId: number) {
@@ -309,7 +309,7 @@ async function createDedicatedAccount(input: {
     },
   })
 
-  return response.data
+  return response!.data
 }
 
 async function resolveActiveContract(driverUserId: string, contractId?: string) {

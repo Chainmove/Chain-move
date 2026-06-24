@@ -24,4 +24,5 @@ const InvestmentSchema: Schema = new Schema({
   date: { type: Date, default: Date.now },
 });
 
-export default mongoose.models.Investment || mongoose.model<IInvestment>('Investment', InvestmentSchema);
+export default (mongoose.models.Investment ||
+  mongoose.model<IInvestment>('Investment', InvestmentSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

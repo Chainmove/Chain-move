@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CalendarDays, ChevronDown, PlusCircle } from "lucide-react"
 import { formatEther } from "viem"
-import { liskSepolia } from "viem/chains"
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { DashboardHeader } from "@/components/dashboard/investor-overview/dashboard-header"
@@ -14,8 +13,8 @@ import { PortfolioActivityCard } from "@/components/dashboard/investor-overview/
 import { InvestorStellarActivityPanel } from "@/components/dashboard/investor-overview/stellar-activity-panel"
 import { WalletsCard } from "@/components/dashboard/investor-overview/wallets-card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardRouteLoading } from "@/components/dashboard/dashboard-route-loading"
+import { DashboardUnauthorized } from "@/components/dashboard/dashboard-unauthorized"
 import { getUserDisplayName, useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 import { getPrivyFundingErrorMessage, startPrivyFunding } from "@/lib/auth/privy-funding"
@@ -24,6 +23,7 @@ import { formatNaira } from "@/lib/currency"
 import { isMockStellar } from "@/lib/mock-stellar/mockConfig"
 import { mockAccount } from "@/lib/mock-stellar/mockAccount"
 import { mockActivity } from "@/lib/mock-stellar/mockActivity"
+import { CURRENT_EMBEDDED_WALLET } from "@/lib/wallet/config"
 
 type PoolPreview = {
   id: string
@@ -48,14 +48,16 @@ function truncateAddress(address: string) {
 }
 
 function formatEthForUi(balanceEth: number | null) {
-  if (!Number.isFinite(balanceEth) || balanceEth === null) return "0 ETH"
-  if (balanceEth < 0.01) return "0 ETH"
-  if (balanceEth < 1) return `${balanceEth.toFixed(2)} ETH`
-  return `${balanceEth.toFixed(1)} ETH`
+  const asset = CURRENT_EMBEDDED_WALLET.network.nativeAsset
+  if (!Number.isFinite(balanceEth) || balanceEth === null) return `0 ${asset}`
+  if (balanceEth < 0.01) return `0 ${asset}`
+  if (balanceEth < 1) return `${balanceEth.toFixed(2)} ${asset}`
+  return `${balanceEth.toFixed(1)} ${asset}`
 }
 
 async function resolveOnchainBalanceEth(address: string) {
-  const rpcUrl = liskSepolia.rpcUrls.default.http[0]
+  const rpcUrl = CURRENT_EMBEDDED_WALLET.network.rpcUrl
+  if (!rpcUrl) return null
   const response = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -284,21 +286,7 @@ export default function InvestorOverviewPage() {
   }
 
   if (!authUser || authUser.role !== "investor") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Access denied</CardTitle>
-            <CardDescription>You need an investor account to access this dashboard.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => router.push("/signin")} className="w-full">
-              Go to Sign in
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <DashboardUnauthorized requiredRoles={["investor"]} currentRole={authUser?.role} />
   }
 
   return (
