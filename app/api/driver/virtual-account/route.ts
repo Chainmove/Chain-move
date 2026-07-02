@@ -42,6 +42,9 @@ export async function GET(request: Request) {
         contractId: contract.id,
         remainingBalanceNgn: contract.remainingBalanceNgn,
         nextPaymentAmountNgn: contract.nextPaymentAmountNgn,
+        isMock: virtualAccount.isMock,
+        mockReference: virtualAccount.mockReference,
+        testOnly: virtualAccount.isMock,
       },
     })
 

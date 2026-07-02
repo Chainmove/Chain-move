@@ -43,7 +43,7 @@ ENABLE_MOCK_STELLAR=true
 Recommended behavior for contributors implementing mock support:
 
 - Paystack checkout: return a fake successful initialization response with a local authorization URL and generated reference.
-- Paystack dedicated virtual accounts: return a deterministic mock bank account for driver/investor repayment testing.
+- Paystack dedicated virtual accounts: return a deterministic mock bank account for driver/investor repayment testing. When `ENABLE_MOCK_PAYMENTS=true`, driver repayment provisioning uses `lib/services/paystack-mock.service.ts` and the Repayment Center exposes a local-only "Simulate Mock Transfer" action.
 - Resend email: log a safe mock email result without calling Resend.
 - Stellar: return deterministic testnet-shaped account, asset, payment, and contract responses without requiring sensitive credentials.
 

@@ -4,6 +4,11 @@ import dbConnect from "@/lib/dbConnect"
 import HirePurchaseContract from "@/models/HirePurchaseContract"
 import DriverVirtualAccount from "@/models/DriverVirtualAccount"
 import { resolveDvaUserIdentity } from "@/lib/services/dva-user-identity.service"
+import {
+  createMockDriverDvaDetails,
+  isMockPaymentsEnabled,
+  isMockVirtualAccountRecord,
+} from "@/lib/services/paystack-mock.service"
 
 export interface DriverVirtualAccountSnapshot {
   id: string
@@ -21,6 +26,8 @@ export interface DriverVirtualAccountSnapshot {
   currency: string | null
   failureReason: string | null
   rawResponse: Record<string, unknown> | null
+  isMock: boolean
+  mockReference: string | null
   createdAt: string
   updatedAt: string
 }
@@ -87,6 +94,11 @@ function toIsoDate(value: Date | string | null | undefined) {
 }
 
 function mapDriverVirtualAccountSnapshot(doc: any): DriverVirtualAccountSnapshot {
+  const rawResponse = doc.rawResponse && typeof doc.rawResponse === "object" ? doc.rawResponse : null
+  const isMock = isMockVirtualAccountRecord(rawResponse) || doc.providerSlug === "mock-paystack"
+  const mockReference =
+    rawResponse && typeof rawResponse.reference === "string" ? rawResponse.reference : null
+
   return {
     id: doc._id.toString(),
     driverUserId: doc.driverUserId.toString(),
@@ -102,7 +114,9 @@ function mapDriverVirtualAccountSnapshot(doc: any): DriverVirtualAccountSnapshot
     providerSlug: doc.providerSlug || null,
     currency: doc.currency || null,
     failureReason: doc.failureReason || null,
-    rawResponse: doc.rawResponse && typeof doc.rawResponse === "object" ? doc.rawResponse : null,
+    rawResponse,
+    isMock,
+    mockReference,
     createdAt: toIsoDate(doc.createdAt),
     updatedAt: toIsoDate(doc.updatedAt),
   }
@@ -337,6 +351,45 @@ async function resolveActiveContract(driverUserId: string, contractId?: string) 
   return contract
 }
 
+async function provisionMockDriverVirtualAccount(input: ProvisionDriverVirtualAccountInput) {
+  const contract = await resolveActiveContract(input.driverUserId, input.contractId)
+  const identity = await resolveDvaUserIdentity(contract.driverUserId.toString(), {
+    requiredRole: "driver",
+  })
+
+  const mockDetails = createMockDriverDvaDetails({
+    driverUserId: contract.driverUserId.toString(),
+    contractId: contract._id.toString(),
+    displayName: identity.fullName || identity.user?.name || null,
+  })
+
+  const savedDoc = await DriverVirtualAccount.findOneAndUpdate(
+    {
+      driverUserId: contract.driverUserId,
+      provider: "PAYSTACK",
+    },
+    {
+      $set: {
+        contractId: contract._id,
+        status: "ACTIVE",
+        paystackCustomerCode: `mock_customer_${contract.driverUserId.toString().slice(-8)}`,
+        paystackCustomerId: null,
+        dedicatedAccountId: null,
+        accountNumber: mockDetails.accountNumber,
+        accountName: mockDetails.accountName,
+        bankName: mockDetails.bankName,
+        providerSlug: mockDetails.providerSlug,
+        currency: mockDetails.currency,
+        rawResponse: mockDetails,
+        failureReason: null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  )
+
+  return mapDriverVirtualAccountSnapshot(savedDoc)
+}
+
 export async function getDriverVirtualAccount(input: ProvisionDriverVirtualAccountInput) {
   await dbConnect()
   const driverObjectId = toObjectId(input.driverUserId, "driver user id")
@@ -370,6 +423,10 @@ export async function getDriverVirtualAccountByAccountNumber(accountNumber: stri
 
 export async function provisionDriverVirtualAccount(input: ProvisionDriverVirtualAccountInput) {
   await dbConnect()
+
+  if (isMockPaymentsEnabled()) {
+    return provisionMockDriverVirtualAccount(input)
+  }
 
   const secretKey = getPaystackSecretKey()
   const preferredBank = resolvePreferredBank(secretKey)
