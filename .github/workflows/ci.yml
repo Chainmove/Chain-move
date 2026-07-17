@@ -52,6 +52,9 @@ jobs:
       - name: TypeScript check
         run: npm run typecheck
 
+      - name: Financial integration tests
+        run: npm run test:integration
+
       - name: Build
         run: npm run build
 

@@ -34,7 +34,6 @@ const StellarPoolAssetSchema: Schema = new Schema(
       type: String,
       required: true,
       trim: true,
-      uppercase: true,
       minlength: 1,
       maxlength: 12,
       validate: {
@@ -118,13 +117,16 @@ StellarPoolAssetSchema.index({ status: 1, network: 1 })
 
 StellarPoolAssetSchema.pre("save", function (next) {
   if (this.isModified("assetCode")) {
-    this.assetCode = this.assetCode.toUpperCase().trim()
+    const assetCode = this.get("assetCode")
+    if (typeof assetCode === "string") this.set("assetCode", assetCode.trim())
   }
   if (this.isModified("issuerPublicKey")) {
-    this.issuerPublicKey = normalizeStellarPublicKey(this.issuerPublicKey)
+    const issuerPublicKey = this.get("issuerPublicKey")
+    if (typeof issuerPublicKey === "string") this.set("issuerPublicKey", normalizeStellarPublicKey(issuerPublicKey))
   }
   if (this.isModified("distributionPublicKey")) {
-    this.distributionPublicKey = normalizeStellarPublicKey(this.distributionPublicKey)
+    const distributionPublicKey = this.get("distributionPublicKey")
+    if (typeof distributionPublicKey === "string") this.set("distributionPublicKey", normalizeStellarPublicKey(distributionPublicKey))
   }
   next()
 })

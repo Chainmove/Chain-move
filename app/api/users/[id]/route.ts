@@ -7,7 +7,7 @@ import { getClientIpAddress } from "@/lib/security/rate-limit"
 import { validatePhoneNumberInput } from "@/lib/validation/phone"
 import User from "@/models/User"
 
-type RouteContext = { params: { id: string } }
+type RouteContext = { params: Promise<{ id: string }> }
 type UserRole = "admin" | "driver" | "investor"
 
 const VALID_ROLES: UserRole[] = ["admin", "driver", "investor"]
@@ -88,12 +88,13 @@ function resolveDuplicateKeyMessage(error: unknown) {
 
 export async function GET(request: Request, { params }: RouteContext) {
   try {
+    const { id } = await params
     const auth = await requireAdmin(request)
     if ("error" in auth) return auth.error
 
     await dbConnect()
 
-    const user = await User.findById(params.id).select(
+    const user = await User.findById(id).select(
       "name fullName email phoneNumber role walletAddress walletaddress privyUserId availableBalance totalInvested totalReturns createdAt",
     )
 
@@ -117,7 +118,8 @@ export async function GET(request: Request, { params }: RouteContext) {
 
 export async function PUT(request: Request, { params }: RouteContext) {
   try {
-    const auth = await requireUserUpdateAccess(request, params.id)
+    const { id } = await params
+    const auth = await requireUserUpdateAccess(request, id)
     if ("error" in auth) return auth.error
 
     await dbConnect()
@@ -147,11 +149,11 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return NextResponse.json({ message: "No user changes were provided." }, { status: 400 })
     }
 
-    if (params.id === auth.user!._id.toString() && hasRole && role !== "admin") {
+    if (id === auth.user!._id.toString() && hasRole && role !== "admin") {
       return NextResponse.json({ message: "You cannot remove your own admin access." }, { status: 403 })
     }
 
-    const existingUser = await User.findById(params.id).select(
+    const existingUser = await User.findById(id).select(
       "name fullName email phoneNumber role walletAddress walletaddress privyUserId",
     )
     if (!existingUser) {
@@ -247,7 +249,7 @@ export async function PUT(request: Request, { params }: RouteContext) {
       actor: auth.user,
       action: auth.isSelf ? "user.self_update" : "user.update",
       targetType: "user",
-      targetId: params.id,
+      targetId: id,
       ipAddress: getClientIpAddress(request),
       metadata: {
         changedFields,
@@ -255,7 +257,7 @@ export async function PUT(request: Request, { params }: RouteContext) {
       },
     })
 
-    const updatedUser = await User.findById(params.id)
+    const updatedUser = await User.findById(id)
       .select("name fullName email phoneNumber role privyUserId walletAddress walletaddress createdAt")
       .lean()
 
@@ -289,16 +291,17 @@ export async function PUT(request: Request, { params }: RouteContext) {
 
 export async function DELETE(request: Request, { params }: RouteContext) {
   try {
+    const { id } = await params
     const auth = await requireAdmin(request)
     if ("error" in auth) return auth.error
 
     await dbConnect()
 
-    if (params.id === auth.user!._id.toString()) {
+    if (id === auth.user!._id.toString()) {
       return NextResponse.json({ message: "You cannot delete your own account." }, { status: 403 })
     }
 
-    const existingUser = await User.findById(params.id).select("role")
+    const existingUser = await User.findById(id).select("role")
     if (!existingUser) {
       return NextResponse.json({ message: "User not found" }, { status: 404 })
     }
@@ -310,13 +313,13 @@ export async function DELETE(request: Request, { params }: RouteContext) {
       }
     }
 
-    await User.findByIdAndDelete(params.id)
+    await User.findByIdAndDelete(id)
 
     await logAuditEvent({
       actor: auth.user,
       action: "user.delete",
       targetType: "user",
-      targetId: params.id,
+      targetId: id,
       ipAddress: getClientIpAddress(request),
       metadata: {
         deletedRole: existingUser.role,

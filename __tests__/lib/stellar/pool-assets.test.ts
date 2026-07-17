@@ -47,7 +47,7 @@ describe("generatePoolAssetCode", () => {
     const poolId = "507f1f77bcf86cd799439abc"
     const assetCode = generatePoolAssetCode(poolId, "KEKE")
 
-    expect(assetCode).toBe("KEKE9439ABC")
+    expect(assetCode).toBe("KEKE439ABC")
     expect(assetCode).toEqual(assetCode.toUpperCase())
   })
 })
@@ -110,8 +110,8 @@ describe("validateAssetCode", () => {
 
 describe("createPoolAsset", () => {
   const mockPoolId = "507f1f77bcf86cd799439011"
-  const mockIssuerKey = "GAJVUHQV5ZBQ6XMVLXL4QHXFZVBVBXM4PEX2XCZMN7H6VWLJDP3I6YHX"
-  const mockDistributionKey = "GBVXSZQHQJLVH7QKGVBR2XDVJ6VJM4LKXNQVHXZBXVJ7CKZW5QJVHXZB"
+  const mockIssuerKey = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
+  const mockDistributionKey = "GABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEJXA"
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -165,9 +165,7 @@ describe("createPoolAsset", () => {
       issuerPublicKey: mockIssuerKey,
       distributionPublicKey: mockDistributionKey,
       contractId: "",
-      explorerBaseUrl: "https://stellar.expert/explorer/testnet",
       mock: false,
-      demoPublicKey: "DEMO",
     })
 
     const result = await createPoolAsset({
@@ -234,9 +232,7 @@ describe("createPoolAsset", () => {
       issuerPublicKey: "",
       distributionPublicKey: mockDistributionKey,
       contractId: "",
-      explorerBaseUrl: "https://stellar.expert/explorer/testnet",
       mock: false,
-      demoPublicKey: "DEMO",
     })
 
     await expect(createPoolAsset({ poolId: mockPoolId })).rejects.toThrow(
@@ -266,9 +262,7 @@ describe("createPoolAsset", () => {
       issuerPublicKey: mockIssuerKey,
       distributionPublicKey: "",
       contractId: "",
-      explorerBaseUrl: "https://stellar.expert/explorer/testnet",
       mock: false,
-      demoPublicKey: "DEMO",
     })
 
     await expect(createPoolAsset({ poolId: mockPoolId })).rejects.toThrow(
