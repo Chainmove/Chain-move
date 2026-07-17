@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto"
+import { buildKeyring, parseAppConfig, type Keyring, type VersionedSecret } from "@/lib/config/schema"
 
 const KYC_DOCUMENT_REF_PREFIX = "kyc-secure:"
 const ENCRYPTION_ALGORITHM = "aes-256-gcm"
@@ -13,6 +14,7 @@ type SecureKycDocumentReference = {
 
 type EncryptedKycDocumentEnvelope = {
   version: number
+  keyVersion?: string
   iv: string
   tag: string
   contentType: string
@@ -20,18 +22,12 @@ type EncryptedKycDocumentEnvelope = {
   data: string
 }
 
-function getKycDocumentEncryptionKey() {
-  const sourceSecret =
-    process.env.KYC_DOCUMENT_ENCRYPTION_KEY ||
-    process.env.JWT_SECRET ||
-    process.env.AUTH_SESSION_SECRET ||
-    process.env.PRIVY_APP_SECRET
+function getKycDocumentKeyring(): Keyring {
+  return buildKeyring(parseAppConfig(process.env))
+}
 
-  if (!sourceSecret) {
-    throw new Error("KYC document encryption secret is not configured.")
-  }
-
-  return createHash("sha256").update(sourceSecret).digest()
+function deriveEncryptionKey(secret: string) {
+  return createHash("sha256").update(secret).digest()
 }
 
 function toBase64Url(value: string) {
@@ -106,12 +102,14 @@ export function encryptKycDocument(
   },
 ) {
   const iv = randomBytes(12)
-  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, getKycDocumentEncryptionKey(), iv)
+  const keyring = getKycDocumentKeyring()
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, deriveEncryptionKey(keyring.active.secret), iv)
   const encrypted = Buffer.concat([cipher.update(input), cipher.final()])
   const tag = cipher.getAuthTag()
 
   const envelope: EncryptedKycDocumentEnvelope = {
     version: ENCRYPTION_VERSION,
+    keyVersion: keyring.active.version,
     iv: iv.toString("base64"),
     tag: tag.toString("base64"),
     contentType,
@@ -142,21 +140,42 @@ export function decryptKycDocument(serializedEnvelope: Buffer) {
     throw new Error("Malformed encrypted KYC document payload.")
   }
 
-  const decipher = createDecipheriv(
-    ENCRYPTION_ALGORITHM,
-    getKycDocumentEncryptionKey(),
-    Buffer.from(envelope.iv, "base64"),
-  )
-  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"))
+  const keyring = getKycDocumentKeyring()
+  const candidateKeys = getCandidateKeys(envelope, keyring)
+  let decrypted: Buffer | null = null
 
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(envelope.data, "base64")),
-    decipher.final(),
-  ])
+  for (const key of candidateKeys) {
+    try {
+      const decipher = createDecipheriv(
+        ENCRYPTION_ALGORITHM,
+        deriveEncryptionKey(key.secret),
+        Buffer.from(envelope.iv, "base64"),
+      )
+      decipher.setAuthTag(Buffer.from(envelope.tag, "base64"))
+
+      decrypted = Buffer.concat([
+        decipher.update(Buffer.from(envelope.data, "base64")),
+        decipher.final(),
+      ])
+      break
+    } catch {
+      decrypted = null
+    }
+  }
+
+  if (!decrypted) {
+    throw new Error("Unable to decrypt KYC document with configured key versions.")
+  }
 
   return {
     buffer: decrypted,
     contentType: envelope.contentType,
     originalFilename: envelope.originalFilename,
   }
+}
+
+function getCandidateKeys(envelope: EncryptedKycDocumentEnvelope, keyring: Keyring): VersionedSecret[] {
+  const keys = [keyring.active, ...keyring.previous]
+  if (!envelope.keyVersion) return keys
+  return keys.filter((key) => key.version === envelope.keyVersion)
 }

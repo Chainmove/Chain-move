@@ -12,6 +12,8 @@ export interface StellarConfig {
   issuerPublicKey: string
   distributionPublicKey: string
   contractId: string
+  explorerBaseUrl?: string
+  demoPublicKey?: string
   mock: boolean
 }
 

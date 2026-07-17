@@ -10,6 +10,11 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "start": "next start",
+    "openapi:generate": "tsx scripts/generate-openapi.ts",
+    "openapi:check": "tsx scripts/check-openapi-drift.ts && tsx scripts/check-openapi-compat.ts",
+    "config:diagnostics": "tsx scripts/config-diagnostics.ts",
+    "config:check-env": "tsx scripts/check-env-example.ts",
+    "fx:legacy-check": "tsx scripts/check-legacy-fx-transactions.ts",
     "demo:pool-asset": "tsx scripts/demo-pool-asset.ts"
   },
   "dependencies": {
@@ -110,6 +115,7 @@
     "jsdom": "^25.0.1",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^2.1.9"
   }

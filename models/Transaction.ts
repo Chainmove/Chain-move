@@ -19,6 +19,8 @@ export interface ITransaction extends Document {
   currency?: string
   originalCurrency?: string
   exchangeRate?: number
+  exchangeRateQuoteId?: Schema.Types.ObjectId
+  bookedQuoteSnapshot?: Record<string, unknown>
   method?: "wallet" | "internal_wallet" | "gateway" | "paystack" | "privy" | "system"
   gatewayReference?: string
   description: string
@@ -56,6 +58,8 @@ const TransactionSchema: Schema = new Schema({
   currency: { type: String, default: "NGN" },
   originalCurrency: { type: String },
   exchangeRate: { type: Number },
+  exchangeRateQuoteId: { type: Schema.Types.ObjectId, ref: "ExchangeRateQuote", index: true },
+  bookedQuoteSnapshot: { type: Schema.Types.Mixed },
   method: {
     type: String,
     enum: ["wallet", "internal_wallet", "gateway", "paystack", "privy", "system"],

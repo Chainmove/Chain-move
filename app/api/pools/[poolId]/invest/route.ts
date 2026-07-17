@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server"
+import { z } from "zod"
 
 import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { parseJsonBody } from "@/lib/api/validation"
 import { investInPool } from "@/lib/services/investments.service"
+
+const investmentRequestSchema = z
+  .object({
+    amountNgn: z.preprocess((value) => Number(value), z.number().positive().max(100_000_000)),
+    txRef: z.string().trim().max(128).optional(),
+  })
+  .strict()
 
 function isTransientTransactionError(error: unknown) {
   if (!error || typeof error !== "object") return false
@@ -35,15 +44,17 @@ export async function POST(request: Request, context: { params: Promise<{ poolId
       return NextResponse.json({ message: "Only investors or admins can invest in pools." }, { status: 403 })
     }
 
-    const body = await request.json()
-    const amountNgn = Number(body.amountNgn)
+    const body = await parseJsonBody(request, investmentRequestSchema)
+    if ("response" in body) return body.response
+
+    const amountNgn = body.data.amountNgn
     const { poolId } = await context.params
 
     const investment = await investInPool({
       poolId,
       userId: user._id.toString(),
       amountNgn,
-      txRef: typeof body.txRef === "string" ? body.txRef : undefined,
+      txRef: body.data.txRef,
     })
 
     const response = NextResponse.json({ success: true, investment }, { status: 201 })

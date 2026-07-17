@@ -116,7 +116,7 @@ const StellarPoolAssetSchema: Schema = new Schema(
 StellarPoolAssetSchema.index({ assetCode: 1, issuerPublicKey: 1 })
 StellarPoolAssetSchema.index({ status: 1, network: 1 })
 
-StellarPoolAssetSchema.pre("save", function (next) {
+StellarPoolAssetSchema.pre<IStellarPoolAsset>("save", function (next) {
   if (this.isModified("assetCode")) {
     this.assetCode = this.assetCode.toUpperCase().trim()
   }

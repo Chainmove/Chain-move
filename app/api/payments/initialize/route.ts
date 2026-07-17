@@ -22,6 +22,7 @@ const bodySchema = z
     ),
     email: z.string().trim().email().max(254).optional(),
   })
+  .strict()
   .refine((value) => typeof value.amount === "number" || typeof value.amountNgn === "number", {
     message: "A valid amount is required.",
     path: ["amountNgn"],

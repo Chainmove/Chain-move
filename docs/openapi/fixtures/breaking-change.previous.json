@@ -1,0 +1,11 @@
+{
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/payments/initialize": {
+      "post": {}
+    },
+    "/api/pools/{poolId}/invest": {
+      "post": {}
+    }
+  }
+}
