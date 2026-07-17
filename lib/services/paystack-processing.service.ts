@@ -153,24 +153,17 @@ export async function processGatewayCharge({
 
   try {
     await session.withTransaction(async () => {
-      try {
-        await ProcessedGatewayEvent.create(
-          [
-            {
-              _id: normalizedReference,
-              paymentType,
-              processedVia,
-            },
-          ],
-          { session },
-        )
-        createdLock = true
-      } catch (error) {
-        if (isDuplicateKeyError(error)) {
-          return
-        }
-        throw error
-      }
+      await ProcessedGatewayEvent.create(
+        [
+          {
+            _id: normalizedReference,
+            paymentType,
+            processedVia,
+          },
+        ],
+        { session },
+      )
+      createdLock = true
 
       if (paymentType === "down_payment") {
         const loanId = typeof metadata.loanId === "string" ? metadata.loanId : undefined
@@ -268,6 +261,9 @@ export async function processGatewayCharge({
       }
     })
   } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return loadExistingProcessedResult(normalizedReference)
+    }
     await logAuditEvent({
       action: paymentType === "wallet_funding" ? "wallet.credit" : "loan.down_payment",
       targetType: paymentType === "wallet_funding" ? "user" : "loan",

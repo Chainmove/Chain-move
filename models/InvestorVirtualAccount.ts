@@ -52,12 +52,10 @@ const InvestorVirtualAccountSchema: Schema = new Schema(
     },
     dedicatedAccountId: {
       type: Number,
-      sparse: true,
     },
     accountNumber: {
       type: String,
       trim: true,
-      sparse: true,
     },
     accountName: {
       type: String,

@@ -1,13 +1,19 @@
 import mongoose from 'mongoose';
+import { MongoMemoryServer } from 'mongodb-memory-server';
 import User from '../../models/User';
 
 describe('User Model - Stellar Fields', () => {
+  let database: MongoMemoryServer;
+
   beforeAll(async () => {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/chainmove-test');
+    database = await MongoMemoryServer.create();
+    await mongoose.connect(database.getUri('chainmove-user-model-test'));
+    await User.init();
   });
 
   afterAll(async () => {
     await mongoose.connection.close();
+    await database.stop();
   });
 
   afterEach(async () => {
