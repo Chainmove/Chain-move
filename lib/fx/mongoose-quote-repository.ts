@@ -66,17 +66,33 @@ export class MongooseQuoteRepository implements QuoteRepository {
   }
 
   async update(snapshot: ExchangeRateQuoteSnapshot) {
-    const document = await ExchangeRateQuote.findByIdAndUpdate(
-      snapshot.id,
+    if (snapshot.status === "consumed") {
+      throw new Error("Use atomic consume to consume quotes.")
+    }
+
+    const document = await ExchangeRateQuote.findOneAndUpdate(
       {
-        status: snapshot.status,
-        consumedAt: snapshot.consumedAt,
-        consumedBy: snapshot.consumedBy,
+        _id: snapshot.id,
+        version: snapshot.version,
+        status: { $ne: "consumed" },
+      },
+      {
+        $set: {
+          status: snapshot.status,
+          consumedAt: snapshot.consumedAt,
+          consumedBy: snapshot.consumedBy,
+        },
+        $inc: { version: 1 },
       },
       { new: true, runValidators: true },
     )
 
-    if (!document) throw new Error("Quote not found.")
+    if (!document) {
+      const current = await ExchangeRateQuote.findById(snapshot.id)
+      if (current) return toSnapshot(current)
+      throw new Error("Quote not found.")
+    }
+
     return toSnapshot(document)
   }
 

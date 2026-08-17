@@ -49,8 +49,21 @@ export class InMemoryQuoteRepository implements QuoteRepository {
   }
 
   async update(snapshot: ExchangeRateQuoteSnapshot) {
-    this.quotes.set(snapshot.id, structuredClone(snapshot))
-    return structuredClone(snapshot)
+    if (snapshot.status === "consumed") {
+      throw new Error("Use atomic consume to consume quotes.")
+    }
+
+    const current = this.quotes.get(snapshot.id)
+    if (current?.status === "consumed" || (current && current.version !== snapshot.version)) {
+      return structuredClone(current)
+    }
+
+    const updated = {
+      ...snapshot,
+      version: (current?.version ?? snapshot.version) + 1,
+    }
+    this.quotes.set(snapshot.id, structuredClone(updated))
+    return structuredClone(updated)
   }
 
   async consume(input: ConsumeQuoteAtomicInput) {
