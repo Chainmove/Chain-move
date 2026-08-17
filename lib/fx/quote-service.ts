@@ -231,16 +231,20 @@ export class ExchangeRateQuoteService {
       throw new Error("Quote source amount does not match the requested conversion.")
     }
 
-    if (quote.status === "consumed") {
-      throw new Error("Quote has already been consumed.")
-    }
-
-    return this.repository.update({
-      ...quote,
-      status: "consumed",
-      consumedAt: now,
+    const result = await this.repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency,
+      quoteCurrency,
+      direction: input.direction || "direct",
+      sourceAmountMajor: input.sourceAmountMajor,
+      amountPolicy: input.amountPolicy || "exact-source",
       consumedBy: input.consumedBy,
+      now,
     })
+
+    if (result.ok) return result.quote
+    throw new Error(this.consumeFailureMessage(result.reason))
   }
 
   private async resolveProviderQuote(baseCurrency: CurrencyCode, quoteCurrency: CurrencyCode) {
@@ -278,6 +282,23 @@ export class ExchangeRateQuoteService {
 
     if (quote.status === "expired") {
       throw new Error("Quote has expired.")
+    }
+  }
+
+  private consumeFailureMessage(reason: string) {
+    switch (reason) {
+      case "not-found":
+        return "Quote not found."
+      case "already-consumed":
+        return "Quote has already been consumed."
+      case "expired":
+        return "Quote has expired."
+      case "locked":
+        return "Quote is locked and cannot be consumed."
+      case "amount-mismatch":
+        return "Quote source amount does not match the requested conversion."
+      default:
+        return "Quote consumption conflict."
     }
   }
 }
