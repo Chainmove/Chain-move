@@ -261,6 +261,47 @@ it("creates and consumes fresh quotes once", async () => {
     expect(["txn_a", "txn_b"]).toContain(stored?.consumedBy)
   })
 
+  it("returns a typed already-consumed result from the repository", async () => {
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+    await service.consumeQuote({
+      quoteId: quote.id,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      consumedBy: "txn_first",
+      now,
+    })
+
+    const retry = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "txn_retry",
+      now,
+    })
+
+    expect(retry).toMatchObject({ ok: false, reason: "already-consumed" })
+    expect(retry.quote?.consumedBy).toBe("txn_first")
+  })
+
   it("lets exactly one real-database consumer win with a barrier", async () => {
     if (mongoose.connection.readyState !== 1) return
 
