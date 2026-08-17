@@ -387,6 +387,207 @@ describe("ExchangeRateQuoteService", () => {
     expect(stored?.version).toBe(2)
   })
 
+  it("returns expired from the database CAS without mutating the quote", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    })
+
+    const result = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "expired_loser",
+      now: new Date("2026-01-01T00:02:00.000Z"),
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: "expired" })
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("created")
+    expect(stored?.consumedBy).toBeUndefined()
+    expect(stored?.consumedAt).toBeUndefined()
+  })
+
+  it("returns locked from the database CAS without mutating the quote", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+    await service.lockQuote(quote.id, now)
+
+    const result = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "locked_loser",
+      now,
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: "locked" })
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("locked")
+    expect(stored?.consumedBy).toBeUndefined()
+  })
+
+  it("returns amount-mismatch from the database CAS without mutating the quote", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+
+    const result = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 9,
+      amountPolicy: "exact-source",
+      consumedBy: "amount_loser",
+      now,
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: "amount-mismatch" })
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("created")
+    expect(stored?.consumedBy).toBeUndefined()
+  })
+
+  it("returns conflict from the database CAS for mismatched quote terms", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+
+    const result = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "NGN",
+      quoteCurrency: "USD",
+      direction: "inverse",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "terms_loser",
+      now,
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: "conflict" })
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("created")
+    expect(stored?.consumedBy).toBeUndefined()
+  })
+
+  it("does not overwrite database consumer details on retry", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const firstConsumeAt = new Date("2026-01-01T00:00:10.000Z")
+    const retryAt = new Date("2026-01-01T00:00:20.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    })
+
+    const consumed = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "winner_txn",
+      now: firstConsumeAt,
+    })
+    expect(consumed).toMatchObject({ ok: true })
+
+    const retry = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "retry_txn",
+      now: retryAt,
+    })
+
+    expect(retry).toMatchObject({ ok: false, reason: "already-consumed" })
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.consumedBy).toBe("winner_txn")
+    expect(stored?.consumedAt?.toISOString()).toBe(firstConsumeAt.toISOString())
+    expect(stored?.version).toBe(2)
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
