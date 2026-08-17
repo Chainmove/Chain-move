@@ -166,6 +166,45 @@ it("creates and consumes fresh quotes once", async () => {
     ).rejects.toThrow("source amount")
   })
 
+  it("lets exactly one concurrent in-memory consumer win", async () => {
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+    })
+
+    const results = await Promise.allSettled([
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 10,
+        consumedBy: "txn_a",
+      }),
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 10,
+        consumedBy: "txn_b",
+      }),
+    ])
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
+
+    const stored = await repository.findById(quote.id)
+    expect(["txn_a", "txn_b"]).toContain(stored?.consumedBy)
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
