@@ -5,6 +5,7 @@ import {
   ConsumeQuoteAtomicResult,
   CurrencyCode,
   ExchangeRateQuoteSnapshot,
+  QuoteConsumeFailureReason,
   QuoteDirection,
   assertCurrency,
   convertMajorAmount,
@@ -285,7 +286,7 @@ export class ExchangeRateQuoteService {
     }
   }
 
-  private consumeFailureMessage(reason: string) {
+  private consumeFailureMessage(reason: QuoteConsumeFailureReason) {
     switch (reason) {
       case "not-found":
         return "Quote not found."
