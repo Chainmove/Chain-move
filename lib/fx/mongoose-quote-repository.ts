@@ -1,5 +1,5 @@
 import ExchangeRateQuote from "@/models/ExchangeRateQuote"
-import { ExchangeRateQuoteSnapshot } from "@/lib/fx/types"
+import { ConsumeQuoteAtomicInput, ExchangeRateQuoteSnapshot, QuoteConsumeFailureReason } from "@/lib/fx/types"
 import { QuoteRepository } from "@/lib/fx/quote-service"
 
 function toSnapshot(document: any): ExchangeRateQuoteSnapshot {
@@ -78,5 +78,63 @@ export class MongooseQuoteRepository implements QuoteRepository {
 
     if (!document) throw new Error("Quote not found.")
     return toSnapshot(document)
+  }
+
+  async consume(input: ConsumeQuoteAtomicInput) {
+    const amountFilter =
+      input.amountPolicy === "exact-source"
+        ? { sourceAmountMajor: input.sourceAmountMajor }
+        : { sourceAmountMajor: { $gte: input.sourceAmountMajor } }
+
+    const document = await ExchangeRateQuote.findOneAndUpdate(
+      {
+        _id: input.quoteId,
+        version: input.expectedVersion,
+        status: "created",
+        expiresAt: { $gte: input.now },
+        baseCurrency: input.baseCurrency,
+        quoteCurrency: input.quoteCurrency,
+        direction: input.direction,
+        amountPolicy: input.amountPolicy,
+        ...amountFilter,
+      },
+      {
+        $set: {
+          status: "consumed",
+          consumedAt: input.now,
+          consumedBy: input.consumedBy,
+        },
+        $inc: { version: 1 },
+      },
+      { new: true, runValidators: true },
+    )
+
+    if (document) return { ok: true as const, quote: toSnapshot(document) }
+
+    const current = await this.findById(input.quoteId)
+    return {
+      ok: false as const,
+      reason: this.resolveConsumeFailure(input, current),
+      quote: current ?? undefined,
+    }
+  }
+
+  private resolveConsumeFailure(
+    input: ConsumeQuoteAtomicInput,
+    quote: ExchangeRateQuoteSnapshot | null,
+  ): QuoteConsumeFailureReason {
+    if (!quote) return "not-found"
+    if (quote.status === "consumed") return "already-consumed"
+    if (quote.status === "expired" || quote.expiresAt.getTime() < input.now.getTime()) return "expired"
+    if (quote.status === "locked") return "locked"
+    if (quote.amountPolicy !== input.amountPolicy) return "conflict"
+
+    const amountMatches =
+      quote.amountPolicy === "exact-source"
+        ? quote.sourceAmountMajor === input.sourceAmountMajor
+        : quote.sourceAmountMajor >= input.sourceAmountMajor
+
+    if (!amountMatches) return "amount-mismatch"
+    return "conflict"
   }
 }
