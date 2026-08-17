@@ -15,9 +15,16 @@ function createService(adapters: ExchangeRateProviderAdapter[] = [new StaticExch
 }
 
 describe("ExchangeRateQuoteService", () => {
-  it("creates and consumes fresh quotes once", async () => {
+it("creates and consumes fresh quotes once", async () => {
     const now = new Date("2026-01-01T00:00:00.000Z")
-    const service = createService()
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
     const quote = await service.createQuote({
       baseCurrency: "USD",
       quoteCurrency: "NGN",
@@ -37,6 +44,7 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(consumed.status).toBe("consumed")
+    expect(consumed.consumedBy).toBe("txn_1")
     await expect(
       service.consumeQuote({
         quoteId: quote.id,
@@ -47,6 +55,9 @@ describe("ExchangeRateQuoteService", () => {
         now,
       }),
     ).rejects.toThrow("already been consumed")
+
+    const stored = await repository.findById(quote.id)
+    expect(stored?.consumedBy).toBe("txn_1")
   })
 
   it("rejects expired quotes", async () => {
