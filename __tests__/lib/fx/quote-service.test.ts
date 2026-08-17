@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import mongoose from "mongoose"
 
 import { StaticExchangeRateAdapter, TimeoutExchangeRateAdapter, type ExchangeRateProviderAdapter } from "@/lib/fx/adapters"
 import { ExchangeRateQuoteService, InMemoryQuoteRepository } from "@/lib/fx/quote-service"
-import { convertMajorAmount } from "@/lib/fx/types"
+import { MongooseQuoteRepository } from "@/lib/fx/mongoose-quote-repository"
+import { ConsumeQuoteAtomicInput, convertMajorAmount } from "@/lib/fx/types"
+import ExchangeRateQuote from "@/models/ExchangeRateQuote"
 
 function createService(adapters: ExchangeRateProviderAdapter[] = [new StaticExchangeRateAdapter({ "USD/NGN": 1500 })]) {
   return new ExchangeRateQuoteService(adapters, new InMemoryQuoteRepository(), {
@@ -14,7 +17,60 @@ function createService(adapters: ExchangeRateProviderAdapter[] = [new StaticExch
   })
 }
 
+function createBarrier(parties: number) {
+  let waiting = 0
+  let release: (() => void) | null = null
+  const ready = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  return async () => {
+    waiting += 1
+    if (waiting === parties) release?.()
+    await ready
+  }
+}
+
+class BarrierQuoteRepository extends MongooseQuoteRepository {
+  constructor(private readonly waitAtConsume: () => Promise<void>) {
+    super()
+  }
+
+  async consume(input: ConsumeQuoteAtomicInput) {
+    await this.waitAtConsume()
+    return super.consume(input)
+  }
+}
+
+async function connectMongo() {
+  if (mongoose.connection.readyState !== 0) return
+
+  try {
+    await mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/chainmove-test", {
+      serverSelectionTimeoutMS: 2000,
+    })
+  } catch (error) {
+    console.warn("MongoDB connection warning in FX quote tests:", error)
+  }
+}
+
 describe("ExchangeRateQuoteService", () => {
+  beforeAll(async () => {
+    await connectMongo()
+  }, 10000)
+
+  afterEach(async () => {
+    if (mongoose.connection.readyState === 1) {
+      await ExchangeRateQuote.deleteMany({})
+    }
+  })
+
+  afterAll(async () => {
+    if (mongoose.connection.readyState !== 0) {
+      await mongoose.connection.close()
+    }
+  })
+
 it("creates and consumes fresh quotes once", async () => {
     const now = new Date("2026-01-01T00:00:00.000Z")
     const repository = new InMemoryQuoteRepository()
