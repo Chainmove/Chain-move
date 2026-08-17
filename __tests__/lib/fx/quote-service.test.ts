@@ -104,6 +104,25 @@ it("creates and consumes fresh quotes once", async () => {
     ).rejects.toThrow("locked")
   })
 
+  it("rejects exact-source amount mismatches", async () => {
+    const service = createService()
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+    })
+
+    await expect(
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 9,
+        consumedBy: "txn_wrong_amount",
+      }),
+    ).rejects.toThrow("source amount")
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
