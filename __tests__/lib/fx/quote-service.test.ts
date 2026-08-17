@@ -71,7 +71,7 @@ describe("ExchangeRateQuoteService", () => {
     }
   })
 
-it("creates and consumes fresh quotes once", async () => {
+  it("creates and consumes fresh quotes once", async () => {
     const now = new Date("2026-01-01T00:00:00.000Z")
     const repository = new InMemoryQuoteRepository()
     const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
