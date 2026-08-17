@@ -123,6 +123,28 @@ it("creates and consumes fresh quotes once", async () => {
     ).rejects.toThrow("source amount")
   })
 
+  it("allows max-source consumption within the quoted ceiling", async () => {
+    const service = createService()
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      amountPolicy: "max-source",
+    })
+
+    const consumed = await service.consumeQuote({
+      quoteId: quote.id,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 9,
+      amountPolicy: "max-source",
+      consumedBy: "txn_under_limit",
+    })
+
+    expect(consumed.status).toBe("consumed")
+    expect(consumed.consumedBy).toBe("txn_under_limit")
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
