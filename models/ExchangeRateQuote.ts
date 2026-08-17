@@ -26,7 +26,7 @@ export interface IExchangeRateQuote extends Document {
 
 const ExchangeRateQuoteSchema = new Schema<IExchangeRateQuote>(
   {
-    version: { type: Number, required: true, default: 1, immutable: true },
+    version: { type: Number, required: true, default: 1 },
     baseCurrency: { type: String, required: true, immutable: true, index: true },
     quoteCurrency: { type: String, required: true, immutable: true, index: true },
     direction: { type: String, enum: ["direct", "inverse"], required: true, immutable: true },
@@ -53,7 +53,7 @@ const ExchangeRateQuoteSchema = new Schema<IExchangeRateQuote>(
 
 ExchangeRateQuoteSchema.pre("save", function validateImmutableConsumption(next) {
   if (!this.isNew && this.isModified()) {
-    const modified = this.modifiedPaths().filter((path) => !["status", "consumedAt", "consumedBy", "updatedAt"].includes(path))
+    const modified = this.modifiedPaths().filter((path) => !["version", "status", "consumedAt", "consumedBy", "updatedAt"].includes(path))
     if (modified.length > 0 && this.status === "consumed") {
       next(new Error("Consumed exchange-rate quotes are immutable."))
       return
