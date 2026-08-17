@@ -1,6 +1,8 @@
 import { ExchangeRateProviderAdapter } from "@/lib/fx/adapters"
 import {
   AmountPolicy,
+  ConsumeQuoteAtomicInput,
+  ConsumeQuoteAtomicResult,
   CurrencyCode,
   ExchangeRateQuoteSnapshot,
   QuoteDirection,
@@ -22,6 +24,7 @@ export interface QuoteRepository {
   findById(id: string): Promise<ExchangeRateQuoteSnapshot | null>
   findByIdempotencyKey(key: string): Promise<ExchangeRateQuoteSnapshot | null>
   update(snapshot: ExchangeRateQuoteSnapshot): Promise<ExchangeRateQuoteSnapshot>
+  consume(input: ConsumeQuoteAtomicInput): Promise<ConsumeQuoteAtomicResult>
 }
 
 export class InMemoryQuoteRepository implements QuoteRepository {
@@ -47,6 +50,53 @@ export class InMemoryQuoteRepository implements QuoteRepository {
   async update(snapshot: ExchangeRateQuoteSnapshot) {
     this.quotes.set(snapshot.id, structuredClone(snapshot))
     return structuredClone(snapshot)
+  }
+
+  async consume(input: ConsumeQuoteAtomicInput) {
+    const quote = this.quotes.get(input.quoteId)
+    if (!quote) return { ok: false as const, reason: "not-found" as const }
+
+    if (quote.status === "consumed") {
+      return { ok: false as const, reason: "already-consumed" as const, quote: structuredClone(quote) }
+    }
+
+    if (quote.expiresAt.getTime() < input.now.getTime() || quote.status === "expired") {
+      return { ok: false as const, reason: "expired" as const, quote: structuredClone(quote) }
+    }
+
+    if (quote.status === "locked") {
+      return { ok: false as const, reason: "locked" as const, quote: structuredClone(quote) }
+    }
+
+    const amountMatches =
+      quote.amountPolicy === "exact-source"
+        ? quote.sourceAmountMajor === input.sourceAmountMajor
+        : quote.sourceAmountMajor >= input.sourceAmountMajor
+
+    if (!amountMatches) {
+      return { ok: false as const, reason: "amount-mismatch" as const, quote: structuredClone(quote) }
+    }
+
+    if (
+      quote.version !== input.expectedVersion ||
+      quote.baseCurrency !== input.baseCurrency ||
+      quote.quoteCurrency !== input.quoteCurrency ||
+      quote.direction !== input.direction ||
+      quote.amountPolicy !== input.amountPolicy ||
+      quote.status !== "created"
+    ) {
+      return { ok: false as const, reason: "conflict" as const, quote: structuredClone(quote) }
+    }
+
+    const consumed = {
+      ...quote,
+      version: quote.version + 1,
+      status: "consumed" as const,
+      consumedAt: input.now,
+      consumedBy: input.consumedBy,
+    }
+    this.quotes.set(input.quoteId, structuredClone(consumed))
+    return { ok: true as const, quote: structuredClone(consumed) }
   }
 }
 
