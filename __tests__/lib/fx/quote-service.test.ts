@@ -261,6 +261,56 @@ it("creates and consumes fresh quotes once", async () => {
     expect(["txn_a", "txn_b"]).toContain(stored?.consumedBy)
   })
 
+  it("lets exactly one real-database consumer win with a barrier", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new BarrierQuoteRepository(createBarrier(2))
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+
+    const results = await Promise.allSettled([
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 10,
+        consumedBy: "mongo_txn_a",
+        now,
+      }),
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 10,
+        consumedBy: "mongo_txn_b",
+        now,
+      }),
+    ])
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled")
+    const rejected = results.filter((result) => result.status === "rejected")
+
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("consumed")
+    expect(["mongo_txn_a", "mongo_txn_b"]).toContain(stored?.consumedBy)
+    expect(stored?.version).toBe(2)
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
