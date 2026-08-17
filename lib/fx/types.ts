@@ -19,6 +19,13 @@ export type MoneyMajor = z.infer<typeof MoneyMajorSchema>
 export type QuoteDirection = "direct" | "inverse"
 export type AmountPolicy = "exact-source" | "max-source"
 export type QuoteStatus = "created" | "locked" | "consumed" | "expired"
+export type QuoteConsumeFailureReason =
+  | "not-found"
+  | "already-consumed"
+  | "expired"
+  | "locked"
+  | "amount-mismatch"
+  | "conflict"
 
 export type ExchangeRateQuoteSnapshot = {
   id: string
@@ -44,6 +51,22 @@ export type ExchangeRateQuoteSnapshot = {
   consumedAt?: Date
   consumedBy?: string
 }
+
+export type ConsumeQuoteAtomicInput = {
+  quoteId: string
+  expectedVersion: number
+  baseCurrency: CurrencyCode
+  quoteCurrency: CurrencyCode
+  direction: QuoteDirection
+  sourceAmountMajor: number
+  amountPolicy: AmountPolicy
+  consumedBy: string
+  now: Date
+}
+
+export type ConsumeQuoteAtomicResult =
+  | { ok: true; quote: ExchangeRateQuoteSnapshot }
+  | { ok: false; reason: QuoteConsumeFailureReason; quote?: ExchangeRateQuoteSnapshot }
 
 export const MINOR_UNITS: Record<CurrencyCode, number> = {
   NGN: 2,
