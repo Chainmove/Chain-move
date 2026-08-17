@@ -81,6 +81,29 @@ it("creates and consumes fresh quotes once", async () => {
     ).rejects.toThrow("expired")
   })
 
+  it("rejects locked quotes during consumption", async () => {
+    const service = createService()
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 1,
+      now,
+    })
+    await service.lockQuote(quote.id, now)
+
+    await expect(
+      service.consumeQuote({
+        quoteId: quote.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMajor: 1,
+        consumedBy: "txn_locked",
+        now,
+      }),
+    ).rejects.toThrow("locked")
+  })
+
   it("supports inverse pairs through the static adapter", async () => {
     const service = createService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })])
     const quote = await service.createQuote({
