@@ -302,6 +302,41 @@ it("creates and consumes fresh quotes once", async () => {
     expect(retry.quote?.consumedBy).toBe("txn_first")
   })
 
+  it("returns a typed conflict result for stale quote versions", async () => {
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+
+    const stale = await repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version + 1,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      direction: "direct",
+      sourceAmountMajor: 10,
+      amountPolicy: "exact-source",
+      consumedBy: "txn_stale",
+      now,
+    })
+
+    expect(stale).toMatchObject({ ok: false, reason: "conflict" })
+    const stored = await repository.findById(quote.id)
+    expect(stored?.status).toBe("created")
+    expect(stored?.consumedBy).toBeUndefined()
+  })
+
   it("lets exactly one real-database consumer win with a barrier", async () => {
     if (mongoose.connection.readyState !== 1) return
 
