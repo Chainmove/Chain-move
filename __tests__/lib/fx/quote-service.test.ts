@@ -337,6 +337,40 @@ describe("ExchangeRateQuoteService", () => {
     expect(stored?.consumedBy).toBeUndefined()
   })
 
+  it("does not let a stale in-memory update overwrite a consumed quote", async () => {
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+    await service.consumeQuote({
+      quoteId: quote.id,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      consumedBy: "winner_before_lock",
+      now,
+    })
+
+    const staleLock = await repository.update({ ...quote, status: "locked" })
+
+    expect(staleLock.status).toBe("consumed")
+    expect(staleLock.consumedBy).toBe("winner_before_lock")
+    const stored = await repository.findById(quote.id)
+    expect(stored?.status).toBe("consumed")
+    expect(stored?.consumedBy).toBe("winner_before_lock")
+  })
+
   it("lets exactly one real-database consumer win with a barrier", async () => {
     if (mongoose.connection.readyState !== 1) return
 
@@ -585,6 +619,43 @@ describe("ExchangeRateQuoteService", () => {
     const stored = await ExchangeRateQuote.findById(quote.id)
     expect(stored?.consumedBy).toBe("winner_txn")
     expect(stored?.consumedAt?.toISOString()).toBe(firstConsumeAt.toISOString())
+    expect(stored?.version).toBe(2)
+  })
+
+  it("does not let a stale database update overwrite a consumed quote", async () => {
+    if (mongoose.connection.readyState !== 1) return
+
+    const repository = new MongooseQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      now,
+    })
+    await service.consumeQuote({
+      quoteId: quote.id,
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 10,
+      consumedBy: "db_winner_before_lock",
+      now,
+    })
+
+    const staleLock = await repository.update({ ...quote, status: "locked" })
+
+    expect(staleLock.status).toBe("consumed")
+    expect(staleLock.consumedBy).toBe("db_winner_before_lock")
+    const stored = await ExchangeRateQuote.findById(quote.id)
+    expect(stored?.status).toBe("consumed")
+    expect(stored?.consumedBy).toBe("db_winner_before_lock")
     expect(stored?.version).toBe(2)
   })
 
