@@ -489,4 +489,3 @@ fn test_ttl_and_legacy_key_migration() {
         assert!(ttl > 0);
     });
 }
-
