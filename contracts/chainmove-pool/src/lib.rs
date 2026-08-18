@@ -70,7 +70,7 @@ pub struct TransitionEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum OperationKind {
+pub enum OperationKind {
     Funding,
     Repayment,
     Refund,
@@ -78,11 +78,26 @@ enum OperationKind {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct OperationReceipt {
-    kind: OperationKind,
-    pool_id: u64,
-    participant: Address,
-    amount: i128,
+pub struct OperationReceipt {
+    pub kind: OperationKind,
+    pub pool_id: u64,
+    pub participant: Address,
+    pub amount: i128,
+    /// The result from the original operation. Retries must not return a
+    /// position that has since changed due to a repayment or refund.
+    pub result: InvestorPosition,
+    /// Ledger at which an operator must have archived this marker.
+    pub archive_required_at_ledger: u32,
+    /// The end of the financial retention policy. A restored receipt may not
+    /// be accepted after this ledger, even if an archive still contains it.
+    pub financial_retention_ends_at_ledger: u32,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReferenceRetentionStatus {
+    pub receipt: OperationReceipt,
+    pub archive_required: bool,
 }
 
 #[contracttype]
@@ -97,6 +112,12 @@ enum DataKey {
 const DAY_IN_LEDGERS: u32 = 17280;
 const RENT_THRESHOLD: u32 = 7 * DAY_IN_LEDGERS;
 const RENT_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
+// Soroban persistent entries have a bounded rent window. Keep the online
+// replay marker for six months and require the immutable event/archive path to
+// retain it for the seven-year financial retention period.
+const REPLAY_MARKER_THRESHOLD: u32 = 150 * DAY_IN_LEDGERS;
+const REPLAY_MARKER_EXTEND_TO: u32 = 180 * DAY_IN_LEDGERS;
+const FINANCIAL_RETENTION_LEDGERS: u32 = 7 * 365 * DAY_IN_LEDGERS;
 
 #[contractimpl]
 impl ChainMovePoolContract {
@@ -111,7 +132,9 @@ impl ChainMovePoolContract {
         target_amount: i128,
     ) -> Result<Pool, ContractError> {
         owner.require_auth();
-        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool_id == 0 || total_units == 0 || target_amount <= 0 || asset_label.is_empty() {
             return Err(ContractError::InvalidInput);
@@ -137,7 +160,9 @@ impl ChainMovePoolContract {
         };
 
         env.storage().persistent().set(&key, &pool);
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         publish_transition(
             &env,
@@ -165,7 +190,9 @@ impl ChainMovePoolContract {
         reference: String,
     ) -> Result<InvestorPosition, ContractError> {
         investor.require_auth();
-        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool_id == 0 || amount <= 0 || reference.is_empty() {
             return Err(ContractError::InvalidInput);
@@ -188,7 +215,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&pool_key)
             .ok_or(ContractError::PoolNotFound)?;
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if !pool.active {
             return Err(ContractError::PoolInactive);
@@ -214,7 +243,9 @@ impl ChainMovePoolContract {
         pool.total_invested = new_total;
         pool.funded_units = new_units;
         env.storage().persistent().set(&pool_key, &pool);
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         let position_key = DataKey::InvestorPosition(pool_id, investor.clone());
         let mut position =
@@ -233,7 +264,9 @@ impl ChainMovePoolContract {
         position.invested = checked_add_i128(position.invested, amount)?;
         position.units = checked_add_u64(position.units, units)?;
         env.storage().persistent().set(&position_key, &position);
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         write_reference(
             &env,
@@ -242,6 +275,7 @@ impl ChainMovePoolContract {
             pool_id,
             investor.clone(),
             amount,
+            position.clone(),
         );
         publish_transition(
             &env,
@@ -270,7 +304,9 @@ impl ChainMovePoolContract {
         reference: String,
     ) -> Result<InvestorPosition, ContractError> {
         payer.require_auth();
-        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool_id == 0 || amount <= 0 || reference.is_empty() {
             return Err(ContractError::InvalidInput);
@@ -293,7 +329,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&pool_key)
             .ok_or(ContractError::PoolNotFound)?;
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool.asset != asset {
             return Err(ContractError::WrongAsset);
@@ -309,7 +347,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&position_key)
             .ok_or(ContractError::InvestorPositionNotFound)?;
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         let outstanding = position
             .invested
@@ -325,9 +365,13 @@ impl ChainMovePoolContract {
         position.repaid = checked_add_i128(position.repaid, amount)?;
 
         env.storage().persistent().set(&pool_key, &pool);
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
         env.storage().persistent().set(&position_key, &position);
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         write_reference(
             &env,
@@ -336,6 +380,7 @@ impl ChainMovePoolContract {
             pool_id,
             investor.clone(),
             amount,
+            position.clone(),
         );
         publish_transition(
             &env,
@@ -363,7 +408,9 @@ impl ChainMovePoolContract {
         reference: String,
     ) -> Result<InvestorPosition, ContractError> {
         owner.require_auth();
-        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool_id == 0 || amount <= 0 || reference.is_empty() {
             return Err(ContractError::InvalidInput);
@@ -386,7 +433,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&pool_key)
             .ok_or(ContractError::PoolNotFound)?;
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool.owner != owner {
             return Err(ContractError::InvalidInput);
@@ -398,7 +447,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&position_key)
             .ok_or(ContractError::InvestorPositionNotFound)?;
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if amount > position.invested {
             return Err(ContractError::NothingToRefund);
@@ -412,11 +463,15 @@ impl ChainMovePoolContract {
         position.units = checked_sub_u64(position.units, refund_units)?;
         pool.total_invested = checked_sub_i128(pool.total_invested, amount)?;
         pool.funded_units = checked_sub_u64(pool.funded_units, refund_units)?;
-        
+
         env.storage().persistent().set(&pool_key, &pool);
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
         env.storage().persistent().set(&position_key, &position);
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         write_reference(
             &env,
@@ -425,6 +480,7 @@ impl ChainMovePoolContract {
             pool_id,
             investor.clone(),
             amount,
+            position.clone(),
         );
         publish_transition(
             &env,
@@ -446,7 +502,9 @@ impl ChainMovePoolContract {
     /// Marks a pool inactive so no further funding is accepted.
     pub fn close_pool(env: Env, owner: Address, pool_id: u64) -> Result<Pool, ContractError> {
         owner.require_auth();
-        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .instance()
+            .extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
 
         if pool_id == 0 {
             return Err(ContractError::InvalidInput);
@@ -465,7 +523,9 @@ impl ChainMovePoolContract {
 
         pool.active = false;
         env.storage().persistent().set(&key, &pool);
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         publish_transition(
             &env,
@@ -509,7 +569,9 @@ impl ChainMovePoolContract {
             .get(&key)
             .ok_or(ContractError::PoolNotFound)?;
 
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
         Ok(pool)
     }
 
@@ -529,7 +591,9 @@ impl ChainMovePoolContract {
             .get(&key)
             .ok_or(ContractError::InvestorPositionNotFound)?;
 
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
         Ok(position)
     }
 
@@ -549,7 +613,9 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&pool_key)
             .ok_or(ContractError::PoolNotFound)?;
-        env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         let position_key = DataKey::InvestorPosition(pool_id, investor);
         let position: InvestorPosition = env
@@ -557,13 +623,68 @@ impl ChainMovePoolContract {
             .persistent()
             .get(&position_key)
             .ok_or(ContractError::InvestorPositionNotFound)?;
-        env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage()
+            .persistent()
+            .extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         let numerator = position
             .invested
             .checked_mul(10_000)
             .ok_or(ContractError::ArithmeticOverflow)?;
         Ok((numerator / pool.target_amount) as u64)
+    }
+
+    /// Gives operators a deterministic archive deadline before the bounded
+    /// on-chain replay marker can expire. Archive the emitted receipt event and
+    /// use `restore_reference` before a late retry reaches the contract.
+    pub fn reference_retention_status(
+        env: Env,
+        reference: String,
+    ) -> Option<ReferenceRetentionStatus> {
+        let key = DataKey::Reference(reference);
+        let receipt = env
+            .storage()
+            .persistent()
+            .get::<DataKey, OperationReceipt>(&key)?;
+        let now = env.ledger().sequence();
+        Some(ReferenceRetentionStatus {
+            archive_required: now >= receipt.archive_required_at_ledger,
+            receipt,
+        })
+    }
+
+    /// Restores a compact archived receipt for a late retry. Only the pool
+    /// owner can perform this recovery, and never beyond financial retention.
+    pub fn restore_reference(
+        env: Env,
+        owner: Address,
+        reference: String,
+        receipt: OperationReceipt,
+    ) -> Result<(), ContractError> {
+        owner.require_auth();
+        if env.ledger().sequence() > receipt.financial_retention_ends_at_ledger {
+            return Err(ContractError::InvalidInput);
+        }
+        let pool_key = DataKey::Pool(receipt.pool_id);
+        let pool: Pool = env
+            .storage()
+            .persistent()
+            .get(&pool_key)
+            .ok_or(ContractError::PoolNotFound)?;
+        if pool.owner != owner {
+            return Err(ContractError::InvalidInput);
+        }
+        let key = DataKey::Reference(reference);
+        if env.storage().persistent().has(&key) {
+            return Err(ContractError::DuplicateReference);
+        }
+        env.storage().persistent().set(&key, &receipt);
+        env.storage().persistent().extend_ttl(
+            &key,
+            REPLAY_MARKER_THRESHOLD,
+            REPLAY_MARKER_EXTEND_TO,
+        );
+        Ok(())
     }
 }
 
@@ -581,7 +702,11 @@ fn read_idempotent_position(
         .persistent()
         .get::<DataKey, OperationReceipt>(&key)
     {
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage().persistent().extend_ttl(
+            &key,
+            REPLAY_MARKER_THRESHOLD,
+            REPLAY_MARKER_EXTEND_TO,
+        );
         if receipt.kind != kind
             || receipt.pool_id != pool_id
             || receipt.participant != participant
@@ -590,14 +715,7 @@ fn read_idempotent_position(
             return Err(ContractError::DuplicateReference);
         }
 
-        let pos_key = DataKey::InvestorPosition(pool_id, participant);
-        let position = env
-            .storage()
-            .persistent()
-            .get(&pos_key)
-            .ok_or(ContractError::InvestorPositionNotFound)?;
-        env.storage().persistent().extend_ttl(&pos_key, RENT_THRESHOLD, RENT_EXTEND_TO);
-        return Ok(Some(position));
+        return Ok(Some(receipt.result));
     }
 
     Ok(None)
@@ -610,18 +728,33 @@ fn write_reference(
     pool_id: u64,
     participant: Address,
     amount: i128,
+    result: InvestorPosition,
 ) {
     let key = DataKey::Reference(reference);
-    env.storage().persistent().set(
-        &key,
-        &OperationReceipt {
-            kind,
-            pool_id,
-            participant,
-            amount,
-        },
+    let current_ledger = env.ledger().sequence();
+    let receipt = OperationReceipt {
+        kind,
+        pool_id,
+        participant,
+        amount,
+        result,
+        archive_required_at_ledger: current_ledger.saturating_add(REPLAY_MARKER_THRESHOLD),
+        financial_retention_ends_at_ledger: current_ledger
+            .saturating_add(FINANCIAL_RETENTION_LEDGERS),
+    };
+    env.storage().persistent().set(&key, &receipt);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, REPLAY_MARKER_THRESHOLD, REPLAY_MARKER_EXTEND_TO);
+    // This immutable event is the archival hand-off for replay protection once
+    // the bounded persistent marker reaches its rent limit.
+    env.events().publish(
+        (
+            Symbol::new(env, "chainmove_pool_v1"),
+            Symbol::new(env, "reference_receipt_v1"),
+        ),
+        receipt,
     );
-    env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
 }
 
 fn allocate_units(pool: &Pool, amount: i128, new_total: i128) -> Result<u64, ContractError> {
