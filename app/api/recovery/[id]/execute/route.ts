@@ -15,7 +15,7 @@ import WalletRecovery from "@/models/WalletRecovery"
 import WalletMigrationRecord from "@/models/WalletMigrationRecord"
 import User from "@/models/User"
 import { getAuthenticatedUser } from "@/lib/auth/current-user"
-import { assertTransition, isTerminal, allFactorsVerified as _allFactorsVerified } from "@/lib/recovery/recovery-state-machine"
+import { assertTransition, isTerminal } from "@/lib/recovery/recovery-state-machine"
 import { allFactorsVerified } from "@/lib/recovery/recovery-factors"
 import { sendRecoveryNotifications } from "@/lib/recovery/recovery-notifications"
 

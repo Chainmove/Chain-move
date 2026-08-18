@@ -361,7 +361,10 @@ export async function evaluateFinalityTimeouts(): Promise<{
   let expiredCount = 0
 
   for (const s of activeSettlements) {
-    const config = getRailSettlementConfig(s.rail, s.environment)
+    const config = getRailSettlementConfig(
+      s.rail,
+      s.environment as "development" | "production" | "test" | undefined,
+    )
     const ageMs = now.getTime() - new Date(s.createdAt).getTime()
     const thresholdMs =
       s.currentState === "observed" || s.currentState === "provisionally_credited"

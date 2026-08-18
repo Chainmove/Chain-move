@@ -59,7 +59,7 @@ describe("GET /api/stellar/activity", () => {
       response: NextResponse.json({ message: "Unauthorized" }, { status: 401 }),
     })
 
-    const response = await GET(buildRequest())
+    const response = (await GET(buildRequest()))!
     expect(response.status).toBe(401)
   })
 
@@ -75,7 +75,7 @@ describe("GET /api/stellar/activity", () => {
       issuerPublicKey: "GD123",
     })
 
-    const response = await GET(buildRequest())
+    const response = (await GET(buildRequest()))!
     const payload = await response.json()
 
     expect(response.status).toBe(200)
@@ -93,7 +93,7 @@ describe("GET /api/stellar/activity", () => {
       network: "testnet",
     })
 
-    const response = await GET(buildRequest())
+    const response = (await GET(buildRequest()))!
     const payload = await response.json()
 
     expect(response.status).toBe(200)
@@ -136,7 +136,7 @@ describe("GET /api/stellar/activity", () => {
       }),
     })
 
-    const response = await GET(buildRequest())
+    const response = (await GET(buildRequest()))!
     const payload = await response.json()
 
     expect(response.status).toBe(200)
