@@ -86,6 +86,15 @@ export function isAllowedKycBlobUrl(rawUrl: string) {
   }
 }
 
+export function isPrivateKycBlobUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl)
+    return url.protocol === "https:" && /\.private\.blob\.vercel-storage\.com$/i.test(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 export function isSupportedKycDocumentReference(reference: string) {
   if (parseKycDocumentReference(reference)) return true
   return isAllowedKycBlobUrl(reference)

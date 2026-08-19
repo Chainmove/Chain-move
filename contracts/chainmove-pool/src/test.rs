@@ -388,6 +388,64 @@ fn refunds_return_custody_and_reduce_principal_units() {
 }
 
 #[test]
+fn partitioned_refunds_match_an_equivalent_one_shot_refund() {
+    let partitioned = create_fixture();
+    fund(&partitioned, &partitioned.investor, 3_333, "fund-partitioned");
+    for (index, amount) in [1_111_i128, 1_111_i128].iter().enumerate() {
+        pool_client(&partitioned)
+            .try_refund_position(
+                &partitioned.owner,
+                &POOL_ID,
+                &partitioned.investor,
+                amount,
+                &String::from_str(&partitioned.env, if index == 0 { "refund-part-1" } else { "refund-part-2" }),
+            )
+            .unwrap()
+            .unwrap();
+    }
+    let partitioned_position = pool_client(&partitioned)
+        .try_read_investor_position(&partitioned.investor, &POOL_ID)
+        .unwrap()
+        .unwrap();
+
+    let one_shot = create_fixture();
+    fund(&one_shot, &one_shot.investor, 3_333, "fund-one-shot");
+    let one_shot_position = pool_client(&one_shot)
+        .try_refund_position(
+            &one_shot.owner,
+            &POOL_ID,
+            &one_shot.investor,
+            &2_222,
+            &String::from_str(&one_shot.env, "refund-one-shot"),
+        )
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(partitioned_position.invested, one_shot_position.invested);
+    assert_eq!(partitioned_position.units, one_shot_position.units);
+}
+
+#[test]
+fn refund_below_unit_granularity_is_rejected_without_moving_principal() {
+    let fixture = create_fixture();
+    fund(&fixture, &fixture.investor, 1_000, "fund-dust-refund");
+    let result = pool_client(&fixture).try_refund_position(
+        &fixture.owner,
+        &POOL_ID,
+        &fixture.investor,
+        &1,
+        &String::from_str(&fixture.env, "refund-dust"),
+    );
+    assert_eq!(result.unwrap_err().unwrap(), ContractError::RefundTooSmall);
+    let position = pool_client(&fixture)
+        .try_read_investor_position(&fixture.investor, &POOL_ID)
+        .unwrap()
+        .unwrap();
+    assert_eq!(position.invested, 1_000);
+    assert_eq!(position.units, 10);
+}
+
+#[test]
 fn conservation_of_value_holds_across_funding_refund_and_repayment() {
     let fixture = create_fixture();
     let token = token_client(&fixture.env, &fixture.asset);

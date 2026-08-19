@@ -1,7 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, token, Address, Env, String, Symbol,
+    contract, contracterror, contractimpl, contracttype, token, xdr::ToXdr, Address, BytesN, Env,
+    String, Symbol,
 };
 
 #[contract]
@@ -24,6 +25,7 @@ pub enum ContractError {
     Overpayment = 11,
     RepayerMismatch = 12,
     NothingToRefund = 13,
+    RefundTooSmall = 14,
 }
 
 #[contracttype]
@@ -86,17 +88,35 @@ struct OperationReceipt {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RefundBasis {
+    basis_invested: i128,
+    basis_units: u64,
+    cumulative_refunded: i128,
+}
+
+#[contracttype]
 #[derive(Clone)]
 enum DataKey {
     Pool(u64),
     InvestorPosition(u64, Address),
+    // Legacy global reference key: scoped only by the raw external reference.
+    // Retained solely so receipts written before the scoped key existed can
+    // still be recognized as idempotent replays. Never written to anymore.
     Reference(String),
+    // Reference key scoped by domain/version, operation kind, pool, and actor,
+    // then hashed to a fixed-size digest so an unrelated pool/operation/actor
+    // can never collide with (or be blocked by) another scope's reference,
+    // and storage cost stays bounded regardless of external reference length.
+    ScopedReference(BytesN<32>),
+    RefundBasis(u64, Address),
     LegacyPool(u64), // Legacy key format for migration testing
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
 const RENT_THRESHOLD: u32 = 7 * DAY_IN_LEDGERS;
 const RENT_EXTEND_TO: u32 = 30 * DAY_IN_LEDGERS;
+const REFERENCE_KEY_DOMAIN: u32 = 1;
 
 #[contractimpl]
 impl ChainMovePoolContract {
@@ -234,6 +254,20 @@ impl ChainMovePoolContract {
         position.units = checked_add_u64(position.units, units)?;
         env.storage().persistent().set(&position_key, &position);
         env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+
+        // Any new funding starts a new exact refund epoch from the combined
+        // principal/unit position. Subsequent partitioned refunds all resolve
+        // against this immutable basis instead of repeatedly rounding ratios.
+        let refund_basis_key = DataKey::RefundBasis(pool_id, investor.clone());
+        env.storage().persistent().set(
+            &refund_basis_key,
+            &RefundBasis {
+                basis_invested: position.invested,
+                basis_units: position.units,
+                cumulative_refunded: 0,
+            },
+        );
+        env.storage().persistent().extend_ttl(&refund_basis_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
         write_reference(
             &env,
@@ -404,9 +438,20 @@ impl ChainMovePoolContract {
             return Err(ContractError::NothingToRefund);
         }
 
-        let refund_units = release_units(&position, amount)?;
+        let refund_basis_key = DataKey::RefundBasis(pool_id, investor.clone());
+        let mut refund_basis: RefundBasis = env
+            .storage()
+            .persistent()
+            .get(&refund_basis_key)
+            .unwrap_or(RefundBasis {
+                basis_invested: position.invested,
+                basis_units: position.units,
+                cumulative_refunded: 0,
+            });
+        let refund_units = release_units(&position, &refund_basis, amount)?;
         transfer_from_contract_to_participant(&env, &pool.asset, &investor, amount);
 
+        refund_basis.cumulative_refunded = checked_add_i128(refund_basis.cumulative_refunded, amount)?;
         position.refunded = checked_add_i128(position.refunded, amount)?;
         position.invested = checked_sub_i128(position.invested, amount)?;
         position.units = checked_sub_u64(position.units, refund_units)?;
@@ -417,6 +462,12 @@ impl ChainMovePoolContract {
         env.storage().persistent().extend_ttl(&pool_key, RENT_THRESHOLD, RENT_EXTEND_TO);
         env.storage().persistent().set(&position_key, &position);
         env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        if position.invested == 0 {
+            env.storage().persistent().remove(&refund_basis_key);
+        } else {
+            env.storage().persistent().set(&refund_basis_key, &refund_basis);
+            env.storage().persistent().extend_ttl(&refund_basis_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        }
 
         write_reference(
             &env,
@@ -567,6 +618,39 @@ impl ChainMovePoolContract {
     }
 }
 
+fn scoped_reference_key(
+    env: &Env,
+    kind: &OperationKind,
+    pool_id: u64,
+    participant: &Address,
+    reference: &String,
+) -> DataKey {
+    let scope = (
+        REFERENCE_KEY_DOMAIN,
+        kind.clone(),
+        pool_id,
+        participant.clone(),
+        reference.clone(),
+    );
+    let digest = env.crypto().sha256(&scope.to_xdr(env));
+    DataKey::ScopedReference(digest.to_bytes())
+}
+
+fn load_investor_position(
+    env: &Env,
+    pool_id: u64,
+    participant: Address,
+) -> Result<InvestorPosition, ContractError> {
+    let pos_key = DataKey::InvestorPosition(pool_id, participant);
+    let position = env
+        .storage()
+        .persistent()
+        .get(&pos_key)
+        .ok_or(ContractError::InvestorPositionNotFound)?;
+    env.storage().persistent().extend_ttl(&pos_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+    Ok(position)
+}
+
 fn read_idempotent_position(
     env: &Env,
     reference: &String,
@@ -575,13 +659,13 @@ fn read_idempotent_position(
     participant: Address,
     amount: i128,
 ) -> Result<Option<InvestorPosition>, ContractError> {
-    let key = DataKey::Reference(reference.clone());
+    let scoped_key = scoped_reference_key(env, &kind, pool_id, &participant, reference);
     if let Some(receipt) = env
         .storage()
         .persistent()
-        .get::<DataKey, OperationReceipt>(&key)
+        .get::<DataKey, OperationReceipt>(&scoped_key)
     {
-        env.storage().persistent().extend_ttl(&key, RENT_THRESHOLD, RENT_EXTEND_TO);
+        env.storage().persistent().extend_ttl(&scoped_key, RENT_THRESHOLD, RENT_EXTEND_TO);
         if receipt.kind != kind
             || receipt.pool_id != pool_id
             || receipt.participant != participant
@@ -590,14 +674,28 @@ fn read_idempotent_position(
             return Err(ContractError::DuplicateReference);
         }
 
-        let pos_key = DataKey::InvestorPosition(pool_id, participant);
-        let position = env
-            .storage()
-            .persistent()
-            .get(&pos_key)
-            .ok_or(ContractError::InvestorPositionNotFound)?;
-        env.storage().persistent().extend_ttl(&pos_key, RENT_THRESHOLD, RENT_EXTEND_TO);
-        return Ok(Some(position));
+        return Ok(Some(load_investor_position(env, pool_id, participant)?));
+    }
+
+    // Backward-compatible read for receipts written under the old, unscoped
+    // global key. Only an exact match for this operation's scope counts as a
+    // replay; any other scope simply ignores the legacy entry instead of
+    // erroring, since a stale global key must never be able to block (or be
+    // hijacked by) an unrelated pool/operation/actor.
+    let legacy_key = DataKey::Reference(reference.clone());
+    if let Some(receipt) = env
+        .storage()
+        .persistent()
+        .get::<DataKey, OperationReceipt>(&legacy_key)
+    {
+        if receipt.kind == kind
+            && receipt.pool_id == pool_id
+            && receipt.participant == participant
+            && receipt.amount == amount
+        {
+            env.storage().persistent().extend_ttl(&legacy_key, RENT_THRESHOLD, RENT_EXTEND_TO);
+            return Ok(Some(load_investor_position(env, pool_id, participant)?));
+        }
     }
 
     Ok(None)
@@ -611,7 +709,7 @@ fn write_reference(
     participant: Address,
     amount: i128,
 ) {
-    let key = DataKey::Reference(reference);
+    let key = scoped_reference_key(env, &kind, pool_id, &participant, &reference);
     env.storage().persistent().set(
         &key,
         &OperationReceipt {
@@ -640,20 +738,35 @@ fn allocate_units(pool: &Pool, amount: i128, new_total: i128) -> Result<u64, Con
     u64::try_from(unit_amount).map_err(|_| ContractError::ArithmeticOverflow)
 }
 
-fn release_units(position: &InvestorPosition, amount: i128) -> Result<u64, ContractError> {
+fn release_units(
+    position: &InvestorPosition,
+    basis: &RefundBasis,
+    amount: i128,
+) -> Result<u64, ContractError> {
     if amount == position.invested {
         return Ok(position.units);
     }
 
-    let unit_amount = amount
-        .checked_mul(position.units as i128)
-        .ok_or(ContractError::ArithmeticOverflow)?
-        .checked_div(position.invested)
+    let cumulative_refunded = checked_add_i128(basis.cumulative_refunded, amount)?;
+    let remaining_principal = checked_sub_i128(basis.basis_invested, cumulative_refunded)?;
+    let numerator = remaining_principal
+        .checked_mul(basis.basis_units as i128)
         .ok_or(ContractError::ArithmeticOverflow)?;
-    if unit_amount <= 0 {
-        return Err(ContractError::InvalidInput);
+    let quotient = numerator
+        .checked_div(basis.basis_invested)
+        .ok_or(ContractError::ArithmeticOverflow)?;
+    let remainder = numerator
+        .checked_rem(basis.basis_invested)
+        .ok_or(ContractError::ArithmeticOverflow)?;
+    let entitled_units = quotient + i128::from(remainder > 0);
+    let entitled_units = u64::try_from(entitled_units).map_err(|_| ContractError::ArithmeticOverflow)?;
+    let released = checked_sub_u64(position.units, entitled_units)?;
+    if released == 0 {
+        // The refund is below the current unit granularity. Reject it explicitly
+        // so principal cannot move while all corresponding units are retained.
+        return Err(ContractError::RefundTooSmall);
     }
-    u64::try_from(unit_amount).map_err(|_| ContractError::ArithmeticOverflow)
+    Ok(released)
 }
 
 fn transfer_from_participant_to_contract(

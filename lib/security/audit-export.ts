@@ -3,6 +3,7 @@ import TamperEvidentAuditLog from "@/models/TamperEvidentAuditLog"
 import AuditCheckpoint from "@/models/AuditCheckpoint"
 import { verifyAuditChain } from "./audit-verification"
 import { buildCanonicalAuditEventData, canonicalizeEventData, computeEventHash, redactPII } from "./audit-hash"
+import { createCsvStream } from "@/lib/exports/csv-stream"
 
 export interface ExportOptions {
   partition: string
@@ -53,6 +54,62 @@ export interface ExportManifest {
   piiRedacted: boolean
 }
 
+const AUDIT_EXPORT_BATCH_SIZE = 250
+
+function buildAuditExportQuery(options: ExportOptions) {
+  const query: any = { partition: options.partition }
+  if (!options.includeLegacy) query.isLegacy = false
+  if (options.startDate || options.endDate) {
+    query.timestamp = {}
+    if (options.startDate) query.timestamp.$gte = options.startDate
+    if (options.endDate) query.timestamp.$lte = options.endDate
+  }
+  if (options.startSequence !== undefined || options.endSequence !== undefined) {
+    query.sequence = {}
+    if (options.startSequence !== undefined) query.sequence.$gte = options.startSequence
+    if (options.endSequence !== undefined) query.sequence.$lte = options.endSequence
+  }
+  if (options.actions?.length) query.action = { $in: options.actions }
+  if (options.actorId) query.actorId = options.actorId
+  if (options.targetType) query.targetType = options.targetType
+  return query
+}
+
+/** Reads audit events in bounded database batches for response/file streaming. */
+export async function* iterateAuditEvents(options: ExportOptions): AsyncGenerator<any> {
+  await dbConnect()
+  const cursor = TamperEvidentAuditLog.find(buildAuditExportQuery(options))
+    .sort({ sequence: 1, _id: 1 })
+    .lean()
+    .cursor({ batchSize: AUDIT_EXPORT_BATCH_SIZE })
+  let previousHash: string | undefined
+  for await (const event of cursor as AsyncIterable<any>) {
+    if (!options.redactPII) {
+      yield event
+      continue
+    }
+    const redactedEvent = {
+      ...event,
+      actorIdentifier: event.actorIdentifier ? "[REDACTED]" : event.actorIdentifier,
+      metadata: redactPII(event.metadata),
+      sourceEventHash: event.eventHash,
+      previousHash: previousHash ?? event.previousHash,
+    }
+    const canonicalData = canonicalizeEventData(buildCanonicalAuditEventData(redactedEvent))
+    const eventHash = computeEventHash(redactedEvent.previousHash + canonicalData)
+    previousHash = eventHash
+    yield { ...redactedEvent, canonicalData, eventHash }
+  }
+}
+
+export function createAuditCsvStream(events: AsyncIterable<any>): ReadableStream<Uint8Array> {
+  const headers = ["Sequence", "Event ID", "Timestamp", "Actor ID", "Actor Role", "Action", "Target Type", "Target ID", "Status", "Request ID", "IP Address", "Previous Hash", "Event Hash", "Is Legacy"]
+  async function* rows(): AsyncGenerator<unknown[]> {
+    for await (const event of events) yield [event.sequence, event.eventId, event.timestamp?.toISOString?.() ?? "", event.actorId || "", event.actorRole || "", event.action, event.targetType, event.targetId || "", event.status, event.requestId || "", event.ipAddress || "", event.previousHash, event.eventHash, event.isLegacy ? "true" : "false"]
+  }
+  return createCsvStream(headers, rows())
+}
+
 /**
  * Export audit events with integrity manifest
  */
@@ -60,62 +117,10 @@ export async function exportAuditEvents(options: ExportOptions): Promise<ExportR
   await dbConnect()
 
   // Build query
-  const query: any = {
-    partition: options.partition,
-  }
-
-  if (!options.includeLegacy) {
-    query.isLegacy = false
-  }
-
-  if (options.startDate || options.endDate) {
-    query.timestamp = {}
-    if (options.startDate) query.timestamp.$gte = options.startDate
-    if (options.endDate) query.timestamp.$lte = options.endDate
-  }
-
-  if (options.startSequence !== undefined || options.endSequence !== undefined) {
-    query.sequence = {}
-    if (options.startSequence !== undefined) query.sequence.$gte = options.startSequence
-    if (options.endSequence !== undefined) query.sequence.$lte = options.endSequence
-  }
-
-  if (options.actions && options.actions.length > 0) {
-    query.action = { $in: options.actions }
-  }
-
-  if (options.actorId) {
-    query.actorId = options.actorId
-  }
-
-  if (options.targetType) {
-    query.targetType = options.targetType
-  }
-
-  // Fetch events
-  let events: any[] = await TamperEvidentAuditLog.find(query).sort({ sequence: 1 }).lean()
-
-  if (options.redactPII) {
-    let previousHash = events[0]?.previousHash
-    events = events.map((event) => {
-      const redactedEvent = {
-        ...event,
-        actorIdentifier: event.actorIdentifier ? "[REDACTED]" : event.actorIdentifier,
-        metadata: redactPII(event.metadata),
-        sourceEventHash: event.eventHash,
-        previousHash,
-      }
-      const canonicalData = canonicalizeEventData(buildCanonicalAuditEventData(redactedEvent))
-      const eventHash = computeEventHash(redactedEvent.previousHash + canonicalData)
-      previousHash = eventHash
-
-      return {
-        ...redactedEvent,
-        canonicalData,
-        eventHash,
-      }
-    })
-  }
+  // Kept for the CLI's manifest-producing API. HTTP callers should use
+  // iterateAuditEvents/createAuditCsvStream so output is never materialized.
+  const events: any[] = []
+  for await (const event of iterateAuditEvents(options)) events.push(event)
 
   // Fetch checkpoints if requested
   let checkpoints: any[] = []

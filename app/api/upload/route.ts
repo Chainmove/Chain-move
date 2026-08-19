@@ -113,10 +113,14 @@ export async function POST(request: Request) {
 
       const storageKey = `kyc/${authContext.user._id.toString()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${filename}.json`
       const blob = await put(storageKey, encryptedPayload, {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         contentType: "application/json",
       })
+
+      if (!blob.url.includes(".private.blob.vercel-storage.com/")) {
+        throw new Error("KYC uploads require a private Blob store.")
+      }
 
       const encryptedRef = createKycDocumentReference({
         url: blob.url,

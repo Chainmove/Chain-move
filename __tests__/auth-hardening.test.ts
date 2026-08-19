@@ -149,7 +149,7 @@ describe("requireRecentAuth", () => {
 
 // ── Session revocation ────────────────────────────────────────────────────────
 
-vi.mock("../models/RevokedSession", () => ({ default: { create: vi.fn().mockResolvedValue({}), findOne: vi.fn() } }), { virtual: true })
+vi.mock("../models/RevokedSession", () => ({ default: { create: vi.fn().mockResolvedValue({}), findOne: vi.fn() } }))
 
 // Mongoose mock so the schema registration doesn't fail in unit test context.
 vi.mock("mongoose", async () => {
@@ -276,7 +276,7 @@ describe("POST /api/auth/stellar/link — recent-auth enforcement", () => {
     getAuthenticatedUser.mockResolvedValue({ user: makeUser(), shouldRefreshSession: false })
     mockExtractPrivyToken.mockReturnValue(null)
 
-    const response = await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY }))
+    const response = (await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY })))!
     expect(response.status).toBe(401)
     const body = await response.json()
     expect(body.code).toBe("RECENT_AUTH_REQUIRED")
@@ -287,7 +287,7 @@ describe("POST /api/auth/stellar/link — recent-auth enforcement", () => {
     mockExtractPrivyToken.mockReturnValue("bad-token")
     mockVerifyPrivyToken.mockRejectedValue(new Error("JWTExpired"))
 
-    const response = await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY }))
+    const response = (await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY })))!
     expect(response.status).toBe(401)
   })
 
@@ -300,7 +300,7 @@ describe("POST /api/auth/stellar/link — recent-auth enforcement", () => {
       iat: Math.floor(Date.now() / 1_000) - 30,
     })
 
-    const response = await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY }))
+    const response = (await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY })))!
     expect(response.status).toBe(401)
     expect(mockLogAuthEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "privy_subject_mismatch" }))
   })
@@ -314,7 +314,7 @@ describe("POST /api/auth/stellar/link — recent-auth enforcement", () => {
       iat: Math.floor(Date.now() / 1_000) - (RECENT_AUTH_CRITICAL_MAX_AGE_SECONDS + 30),
     })
 
-    const response = await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY }))
+    const response = (await POST(buildRequest({ stellarPublicKey: VALID_STELLAR_KEY })))!
     expect(response.status).toBe(401)
     expect(mockLogAuthEvent).toHaveBeenCalledWith(
       expect.objectContaining({ type: "high_risk_action_denied_recent_auth" }),

@@ -97,16 +97,13 @@ export class MongooseQuoteRepository implements QuoteRepository {
   }
 
   async consume(input: ConsumeQuoteAtomicInput) {
-    const amountFilter =
-      input.amountPolicy === "exact-source"
-        ? { sourceAmountMajor: input.sourceAmountMajor }
-        : { sourceAmountMajor: { $gte: input.sourceAmountMajor } }
+    const amountFilter = this.consumeAmountFilter(input)
 
     const document = await ExchangeRateQuote.findOneAndUpdate(
       {
         _id: input.quoteId,
         version: input.expectedVersion,
-        status: "created",
+        status: "locked",
         expiresAt: { $gte: input.now },
         baseCurrency: input.baseCurrency,
         quoteCurrency: input.quoteCurrency,
@@ -142,15 +139,38 @@ export class MongooseQuoteRepository implements QuoteRepository {
     if (!quote) return "not-found"
     if (quote.status === "consumed") return "already-consumed"
     if (quote.status === "expired" || quote.expiresAt.getTime() < input.now.getTime()) return "expired"
-    if (quote.status === "locked") return "locked"
+    if (quote.status !== "locked") return "conflict"
     if (quote.amountPolicy !== input.amountPolicy) return "conflict"
 
-    const amountMatches =
-      quote.amountPolicy === "exact-source"
-        ? quote.sourceAmountMajor === input.sourceAmountMajor
-        : quote.sourceAmountMajor >= input.sourceAmountMajor
+    const amountMatches = this.consumeAmountMatches(input, quote)
 
     if (!amountMatches) return "amount-mismatch"
     return "conflict"
+  }
+
+  private consumeAmountFilter(input: ConsumeQuoteAtomicInput) {
+    if (input.sourceAmountMinor !== undefined) {
+      return input.amountPolicy === "exact-source"
+        ? { sourceAmountMinor: input.sourceAmountMinor }
+        : { sourceAmountMinor: { $gte: input.sourceAmountMinor } }
+    }
+
+    return input.amountPolicy === "exact-source"
+      ? { sourceAmountMajor: input.sourceAmountMajor }
+      : { sourceAmountMajor: { $gte: input.sourceAmountMajor } }
+  }
+
+  private consumeAmountMatches(input: ConsumeQuoteAtomicInput, quote: ExchangeRateQuoteSnapshot) {
+    if (input.sourceAmountMinor !== undefined) {
+      return quote.amountPolicy === "exact-source"
+        ? quote.sourceAmountMinor === input.sourceAmountMinor
+        : quote.sourceAmountMinor >= input.sourceAmountMinor
+    }
+
+    if (input.sourceAmountMajor === undefined) return false
+
+    return quote.amountPolicy === "exact-source"
+      ? quote.sourceAmountMajor === input.sourceAmountMajor
+      : quote.sourceAmountMajor >= input.sourceAmountMajor
   }
 }

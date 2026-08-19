@@ -4,6 +4,10 @@ import User from "@/models/User"
 import Loan from "@/models/Loan"
 import { jwtVerify } from "jose"
 import { cookies } from "next/headers"
+import { z } from "zod"
+import { ExchangeRateQuoteService } from "@/lib/fx/quote-service"
+import { MongooseQuoteRepository } from "@/lib/fx/mongoose-quote-repository"
+import { parseDecimalToMinorUnits } from "@/lib/fx/types"
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET?.trim()
@@ -14,25 +18,12 @@ function getJwtSecret() {
   return new TextEncoder().encode(secret)
 }
 
-// Function to get USD/NGN exchange rate (convert USD to NGN)
-async function getUSDToNGNRate(): Promise<number> {
-  try {
-    // Use exchange rate API to get current rates
-    const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD")
-    const data = await response.json()
-
-    if (data.rates && data.rates.NGN) {
-      return data.rates.NGN // This gives us how many NGN = 1 USD
-    }
-
-    // Fallback to fixed rate if API fails
-    throw new Error("Exchange rate API failed")
-  } catch (error) {
-    console.warn("Failed to fetch live exchange rate, using fallback rate:", error)
-    // Fallback rate: approximately 1 USD = 1600 NGN (adjust as needed)
-    return 1600
-  }
-}
+const requestSchema = z.object({
+  loanId: z.string().trim().min(1),
+  quoteId: z.string().trim().min(1),
+  amount: z.union([z.string().trim().min(1), z.number().finite().positive()]),
+  currency: z.literal("USD").default("USD"),
+})
 
 export async function POST(request: Request) {
   try {
@@ -52,15 +43,15 @@ export async function POST(request: Request) {
     const userId = payload.userId as string
     console.log("User ID from token:", userId)
 
-    const { loanId, amount, currency = "USD" } = await request.json()
-    console.log("Request data:", { loanId, amount, currency })
+    const parsed = requestSchema.safeParse(await request.json())
+    if (!parsed.success) {
+      return NextResponse.json({ message: "Loan ID, locked quote ID, and exact USD amount are required" }, { status: 400 })
+    }
+    const { loanId, quoteId, amount, currency } = parsed.data
+    const sourceAmountMinor = parseDecimalToMinorUnits(amount, "USD")
+    console.log("Request data:", { loanId, quoteId, currency })
 
     const secretKey = process.env.PAYSTACK_SECRET_KEY
-
-    if (!loanId || !amount) {
-      console.log("Missing loanId or amount")
-      return NextResponse.json({ message: "Loan ID and amount are required" }, { status: 400 })
-    }
 
     if (!secretKey) {
       console.log("Paystack secret key not configured")
@@ -98,16 +89,33 @@ export async function POST(request: Request) {
       console.log("Down payment already made")
       return NextResponse.json({ message: "Down payment already completed" }, { status: 400 })
     }
-    console.log("Loan validation passed, proceeding with currency conversion")
+    console.log("Loan validation passed, consuming locked FX quote")
 
-    // Convert USD amount to NGN (always convert since Paystack uses NGN)
-    const exchangeRate = await getUSDToNGNRate()
-    const amountInNaira = amount * exchangeRate
-    console.log(`Converting $${amount} to ₦${amountInNaira.toLocaleString()} at rate ${exchangeRate}`)
+    const quoteService = new ExchangeRateQuoteService([], new MongooseQuoteRepository(), {
+      maxQuoteAgeMs: 0,
+      quoteTtlMs: 0,
+      deviationThresholdBps: 0,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN"],
+    })
+    let quote: Awaited<ReturnType<ExchangeRateQuoteService["consumeQuote"]>>
+    try {
+      quote = await quoteService.consumeQuote({
+        quoteId,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMinor,
+        consumedBy: `down-payment:${loanId}:${userId}`,
+      })
+    } catch (error) {
+      return NextResponse.json(
+        { message: error instanceof Error ? error.message : "FX quote could not be consumed" },
+        { status: 409 },
+      )
+    }
 
-    // Paystack expects the amount in kobo (NGN * 100)
-    const amountInKobo = Math.round(amountInNaira * 100)
-    console.log("Amount in kobo:", amountInKobo)
+    // Paystack consumes integer kobo directly from the immutable quote snapshot.
+    const amountInKobo = quote.convertedAmountMinor
 
     // Initialize transaction with Paystack
     console.log("Calling Paystack API...")
@@ -125,10 +133,18 @@ export async function POST(request: Request) {
           loanId,
           paymentType: "down_payment",
           userId,
-          originalAmountUSD: amount,
+          quoteId: quote.id,
+          quoteVersion: quote.version,
+          sourceAmountMinor: quote.sourceAmountMinor,
+          convertedAmountMinor: quote.convertedAmountMinor,
           selectedCurrency: currency,
-          exchangeRate,
-          amountNGN: amountInNaira,
+          exchangeRate: quote.rate,
+          providerRate: quote.providerRate,
+          rateSource: quote.provider,
+          rateTimestamp: quote.providerTimestamp.toISOString(),
+          quoteFetchedAt: quote.fetchedAt.toISOString(),
+          spreadBps: quote.spreadBps,
+          quoteConsumer: quote.consumedBy,
         },
       }),
     })
@@ -146,9 +162,13 @@ export async function POST(request: Request) {
       success: true,
       data: paystackData.data,
       conversionInfo: {
-        originalAmountUSD: amount,
-        convertedAmountNGN: amountInNaira,
-        exchangeRate,
+        quoteId: quote.id,
+        sourceAmountMinor: quote.sourceAmountMinor,
+        convertedAmountMinor: quote.convertedAmountMinor,
+        exchangeRate: quote.rate,
+        rateSource: quote.provider,
+        rateTimestamp: quote.providerTimestamp,
+        spreadBps: quote.spreadBps,
         selectedCurrency: currency,
       },
     })

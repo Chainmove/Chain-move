@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { get } from "@vercel/blob"
 import { z } from "zod"
 
 import { finalizeAuthenticatedResponse } from "@/lib/api/route-guard"
@@ -8,6 +9,7 @@ import dbConnect from "@/lib/dbConnect"
 import {
   decryptKycDocument,
   isAllowedKycBlobUrl,
+  isPrivateKycBlobUrl,
   parseKycDocumentReference,
 } from "@/lib/security/kyc-documents"
 import { verifySignedDocumentUrl } from "@/lib/security/kyc-signed-urls"
@@ -114,23 +116,36 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "Unsupported KYC document reference." }, { status: 400 })
     }
 
-    const upstreamResponse = await fetch(rawBlobUrl, { cache: "no-store" })
-    if (!upstreamResponse.ok) {
-      return NextResponse.json({ message: "Unable to load document." }, { status: 404 })
-    }
-
     let body: Buffer
-    let contentType = upstreamResponse.headers.get("content-type") || "application/octet-stream"
+    let encryptedPayload: Buffer
+    let contentType = "application/octet-stream"
     let filename = sanitizeFilename(rawBlobUrl.split("/").pop() || "document")
 
+    if (isPrivateKycBlobUrl(rawBlobUrl)) {
+      const privateBlob = await get(rawBlobUrl, { access: "private" })
+      if (privateBlob?.statusCode !== 200 || !privateBlob.stream) {
+        return NextResponse.json({ message: "Unable to load document." }, { status: 404 })
+      }
+      encryptedPayload = Buffer.from(await new Response(privateBlob.stream).arrayBuffer())
+      contentType = privateBlob.blob.contentType || contentType
+    } else {
+      // Compatibility window for inventoried legacy blobs only. New uploads are
+      // always private and the migration script revokes these public objects.
+      const legacyBlob = await fetch(rawBlobUrl, { cache: "no-store" })
+      if (!legacyBlob.ok) {
+        return NextResponse.json({ message: "Unable to load document." }, { status: 404 })
+      }
+      encryptedPayload = Buffer.from(await legacyBlob.arrayBuffer())
+      contentType = legacyBlob.headers.get("content-type") || contentType
+    }
+
     if (secureReference) {
-      const encryptedPayload = Buffer.from(await upstreamResponse.arrayBuffer())
       const decryptedDocument = decryptKycDocument(encryptedPayload)
       body = decryptedDocument.buffer
       contentType = decryptedDocument.contentType
       filename = sanitizeFilename(decryptedDocument.originalFilename)
     } else {
-      body = Buffer.from(await upstreamResponse.arrayBuffer())
+      body = encryptedPayload
     }
 
     if (docRecord) {

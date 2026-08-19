@@ -45,7 +45,7 @@ describe("POST /api/admin/stellar/sync", () => {
       response: NextResponse.json({ message: "Unauthorized" }, { status: 401 }),
     })
 
-    const response = await POST(buildRequest())
+    const response = (await POST(buildRequest()))!
     expect(response.status).toBe(401)
     expect(sync).not.toHaveBeenCalled()
   })
@@ -60,7 +60,7 @@ describe("POST /api/admin/stellar/sync", () => {
       lastCursor: "cursor-123",
     })
 
-    const response = await POST(buildRequest())
+    const response = (await POST(buildRequest()))!
     const payload = await response.json()
 
     expect(response.status).toBe(200)

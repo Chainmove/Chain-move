@@ -12,6 +12,23 @@ This contract is prototype/testnet work only. It is not audited and must not be 
 - Read pool state.
 - Read an investor position.
 
+## Idempotency Keys
+
+Funding, repayment, and refund calls take an external `reference` string used
+to make retries idempotent. The storage key for that receipt is derived from
+a domain/version tag, the operation kind, the pool ID, and the participant
+address, then hashed to a fixed-size digest (`DataKey::ScopedReference`).
+This means the same external reference can be reused safely across unrelated
+pools, operations, or actors, and no one can preempt another pool/actor by
+guessing or reusing its reference. A duplicate call within the same scope
+(same kind, pool, actor, and reference) with matching parameters still
+returns the original result; matching reference with different parameters is
+rejected as `DuplicateReference`.
+
+Receipts written before this change live under the older, unscoped
+`DataKey::Reference` key. Those are still honored for exact-scope replays,
+but that key is never written to going forward.
+
 ## Local Commands
 
 From the repository root:

@@ -4,7 +4,7 @@ import mongoose from "mongoose"
 import { StaticExchangeRateAdapter, TimeoutExchangeRateAdapter, type ExchangeRateProviderAdapter } from "@/lib/fx/adapters"
 import { ExchangeRateQuoteService, InMemoryQuoteRepository } from "@/lib/fx/quote-service"
 import { MongooseQuoteRepository } from "@/lib/fx/mongoose-quote-repository"
-import { ConsumeQuoteAtomicInput, convertMajorAmount } from "@/lib/fx/types"
+import { ConsumeQuoteAtomicInput, convertMajorAmount, parseDecimalToMinorUnits } from "@/lib/fx/types"
 import ExchangeRateQuote from "@/models/ExchangeRateQuote"
 
 function createService(adapters: ExchangeRateProviderAdapter[] = [new StaticExchangeRateAdapter({ "USD/NGN": 1500 })]) {
@@ -89,9 +89,10 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(quote.convertedAmountMinor).toBe(1_500_000)
+    const locked = await service.lockQuote(quote.id, now)
 
     const consumed = await service.consumeQuote({
-      quoteId: quote.id,
+      quoteId: locked.id,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
@@ -103,7 +104,7 @@ describe("ExchangeRateQuoteService", () => {
     expect(consumed.consumedBy).toBe("txn_1")
     await expect(
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 10,
@@ -137,7 +138,7 @@ describe("ExchangeRateQuoteService", () => {
     ).rejects.toThrow("expired")
   })
 
-  it("rejects locked quotes during consumption", async () => {
+  it("rejects quotes that have not been locked before consumption", async () => {
     const service = createService()
     const now = new Date("2026-01-01T00:00:00.000Z")
     const quote = await service.createQuote({
@@ -146,8 +147,6 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 1,
       now,
     })
-    await service.lockQuote(quote.id, now)
-
     await expect(
       service.consumeQuote({
         quoteId: quote.id,
@@ -157,7 +156,7 @@ describe("ExchangeRateQuoteService", () => {
         consumedBy: "txn_locked",
         now,
       }),
-    ).rejects.toThrow("locked")
+    ).rejects.toThrow("must be locked")
   })
 
   it("rejects exact-source amount mismatches", async () => {
@@ -167,10 +166,11 @@ describe("ExchangeRateQuoteService", () => {
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
     })
+    const locked = await service.lockQuote(quote.id)
 
     await expect(
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 9,
@@ -187,9 +187,10 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       amountPolicy: "max-source",
     })
+    const locked = await service.lockQuote(quote.id)
 
     const consumed = await service.consumeQuote({
-      quoteId: quote.id,
+      quoteId: locked.id,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       sourceAmountMajor: 9,
@@ -209,10 +210,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       amountPolicy: "max-source",
     })
+    const locked = await service.lockQuote(quote.id)
 
     await expect(
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 11,
@@ -236,17 +238,18 @@ describe("ExchangeRateQuoteService", () => {
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
     })
+    const locked = await service.lockQuote(quote.id)
 
     const results = await Promise.allSettled([
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 10,
         consumedBy: "txn_a",
       }),
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 10,
@@ -259,6 +262,47 @@ describe("ExchangeRateQuoteService", () => {
 
     const stored = await repository.findById(quote.id)
     expect(["txn_a", "txn_b"]).toContain(stored?.consumedBy)
+  })
+
+  it("lets exactly one concurrent in-memory consumer win when matching source minor units", async () => {
+    const now = new Date("2026-01-01T00:00:00.000Z")
+    const repository = new InMemoryQuoteRepository()
+    const service = new ExchangeRateQuoteService([new StaticExchangeRateAdapter({ "USD/NGN": 1500 })], repository, {
+      maxQuoteAgeMs: 60_000,
+      quoteTtlMs: 60_000,
+      deviationThresholdBps: 250,
+      markupBps: 0,
+      supportedPairs: ["USD/NGN", "NGN/USD"],
+    })
+    const quote = await service.createQuote({
+      baseCurrency: "USD",
+      quoteCurrency: "NGN",
+      sourceAmountMajor: 3,
+      now,
+    })
+    const locked = await service.lockQuote(quote.id, now)
+
+    const attempts = await Promise.allSettled([
+      service.consumeQuote({
+        quoteId: locked.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMinor: 300,
+        consumedBy: "minor_a",
+        now,
+      }),
+      service.consumeQuote({
+        quoteId: locked.id,
+        baseCurrency: "USD",
+        quoteCurrency: "NGN",
+        sourceAmountMinor: 300,
+        consumedBy: "minor_b",
+        now,
+      }),
+    ])
+
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1)
+    expect(attempts.filter((attempt) => attempt.status === "rejected")).toHaveLength(1)
   })
 
   it("returns a typed already-consumed result from the repository", async () => {
@@ -277,8 +321,9 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
     await service.consumeQuote({
-      quoteId: quote.id,
+      quoteId: locked.id,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
@@ -287,8 +332,8 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     const retry = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -318,10 +363,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
 
     const stale = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version + 1,
+      quoteId: locked.id,
+      expectedVersion: locked.version + 1,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -332,8 +378,8 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(stale).toMatchObject({ ok: false, reason: "conflict" })
-    const stored = await repository.findById(quote.id)
-    expect(stored?.status).toBe("created")
+    const stored = await repository.findById(locked.id)
+    expect(stored?.status).toBe("locked")
     expect(stored?.consumedBy).toBeUndefined()
   })
 
@@ -353,8 +399,9 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
     await service.consumeQuote({
-      quoteId: quote.id,
+      quoteId: locked.id,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
@@ -389,10 +436,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
 
     const results = await Promise.allSettled([
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 10,
@@ -400,7 +448,7 @@ describe("ExchangeRateQuoteService", () => {
         now,
       }),
       service.consumeQuote({
-        quoteId: quote.id,
+        quoteId: locked.id,
         baseCurrency: "USD",
         quoteCurrency: "NGN",
         sourceAmountMajor: 10,
@@ -415,10 +463,10 @@ describe("ExchangeRateQuoteService", () => {
     expect(fulfilled).toHaveLength(1)
     expect(rejected).toHaveLength(1)
 
-    const stored = await ExchangeRateQuote.findById(quote.id)
+    const stored = await ExchangeRateQuote.findById(locked.id)
     expect(stored?.status).toBe("consumed")
     expect(["mongo_txn_a", "mongo_txn_b"]).toContain(stored?.consumedBy)
-    expect(stored?.version).toBe(2)
+    expect(stored?.version).toBe(3)
   })
 
   it("returns expired from the database CAS without mutating the quote", async () => {
@@ -438,10 +486,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now: new Date("2026-01-01T00:00:00.000Z"),
     })
+    const locked = await service.lockQuote(quote.id, new Date("2026-01-01T00:00:00.000Z"))
 
     const result = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -452,13 +501,13 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(result).toMatchObject({ ok: false, reason: "expired" })
-    const stored = await ExchangeRateQuote.findById(quote.id)
-    expect(stored?.status).toBe("created")
+    const stored = await ExchangeRateQuote.findById(locked.id)
+    expect(stored?.status).toBe("locked")
     expect(stored?.consumedBy).toBeUndefined()
     expect(stored?.consumedAt).toBeUndefined()
   })
 
-  it("returns locked from the database CAS without mutating the quote", async () => {
+  it("returns conflict from the database CAS for unlocked quotes without mutating the quote", async () => {
     if (mongoose.connection.readyState !== 1) return
 
     const repository = new MongooseQuoteRepository()
@@ -476,8 +525,6 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
-    await service.lockQuote(quote.id, now)
-
     const result = await repository.consume({
       quoteId: quote.id,
       expectedVersion: quote.version,
@@ -490,9 +537,9 @@ describe("ExchangeRateQuoteService", () => {
       now,
     })
 
-    expect(result).toMatchObject({ ok: false, reason: "locked" })
+    expect(result).toMatchObject({ ok: false, reason: "conflict" })
     const stored = await ExchangeRateQuote.findById(quote.id)
-    expect(stored?.status).toBe("locked")
+    expect(stored?.status).toBe("created")
     expect(stored?.consumedBy).toBeUndefined()
   })
 
@@ -514,10 +561,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
 
     const result = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -528,8 +576,8 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(result).toMatchObject({ ok: false, reason: "amount-mismatch" })
-    const stored = await ExchangeRateQuote.findById(quote.id)
-    expect(stored?.status).toBe("created")
+    const stored = await ExchangeRateQuote.findById(locked.id)
+    expect(stored?.status).toBe("locked")
     expect(stored?.consumedBy).toBeUndefined()
   })
 
@@ -551,10 +599,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
 
     const result = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "NGN",
       quoteCurrency: "USD",
       direction: "inverse",
@@ -565,8 +614,8 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(result).toMatchObject({ ok: false, reason: "conflict" })
-    const stored = await ExchangeRateQuote.findById(quote.id)
-    expect(stored?.status).toBe("created")
+    const stored = await ExchangeRateQuote.findById(locked.id)
+    expect(stored?.status).toBe("locked")
     expect(stored?.consumedBy).toBeUndefined()
   })
 
@@ -589,10 +638,11 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now: new Date("2026-01-01T00:00:00.000Z"),
     })
+    const locked = await service.lockQuote(quote.id, new Date("2026-01-01T00:00:00.000Z"))
 
     const consumed = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -604,8 +654,8 @@ describe("ExchangeRateQuoteService", () => {
     expect(consumed).toMatchObject({ ok: true })
 
     const retry = await repository.consume({
-      quoteId: quote.id,
-      expectedVersion: quote.version,
+      quoteId: locked.id,
+      expectedVersion: locked.version,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       direction: "direct",
@@ -616,10 +666,10 @@ describe("ExchangeRateQuoteService", () => {
     })
 
     expect(retry).toMatchObject({ ok: false, reason: "already-consumed" })
-    const stored = await ExchangeRateQuote.findById(quote.id)
+    const stored = await ExchangeRateQuote.findById(locked.id)
     expect(stored?.consumedBy).toBe("winner_txn")
     expect(stored?.consumedAt?.toISOString()).toBe(firstConsumeAt.toISOString())
-    expect(stored?.version).toBe(2)
+    expect(stored?.version).toBe(3)
   })
 
   it("does not let a stale database update overwrite a consumed quote", async () => {
@@ -640,8 +690,9 @@ describe("ExchangeRateQuoteService", () => {
       sourceAmountMajor: 10,
       now,
     })
+    const locked = await service.lockQuote(quote.id, now)
     await service.consumeQuote({
-      quoteId: quote.id,
+      quoteId: locked.id,
       baseCurrency: "USD",
       quoteCurrency: "NGN",
       sourceAmountMajor: 10,
@@ -656,7 +707,7 @@ describe("ExchangeRateQuoteService", () => {
     const stored = await ExchangeRateQuote.findById(quote.id)
     expect(stored?.status).toBe("consumed")
     expect(stored?.consumedBy).toBe("db_winner_before_lock")
-    expect(stored?.version).toBe(2)
+    expect(stored?.version).toBe(3)
   })
 
   it("supports inverse pairs through the static adapter", async () => {
@@ -705,6 +756,8 @@ describe("ExchangeRateQuoteService", () => {
   })
 
   it("uses deterministic minor-unit rounding and rejects invalid rates", () => {
+    expect(parseDecimalToMinorUnits("1.05", "USD")).toBe(105)
+    expect(() => parseDecimalToMinorUnits("1.005", "USD")).toThrow("at most 2 decimal")
     expect(
       convertMajorAmount({
         amountMajor: 1.005,

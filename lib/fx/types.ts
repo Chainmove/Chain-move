@@ -58,7 +58,8 @@ export type ConsumeQuoteAtomicInput = {
   baseCurrency: CurrencyCode
   quoteCurrency: CurrencyCode
   direction: QuoteDirection
-  sourceAmountMajor: number
+  sourceAmountMajor?: number
+  sourceAmountMinor?: number
   amountPolicy: AmountPolicy
   consumedBy: string
   now: Date
@@ -87,6 +88,19 @@ export function toMinorUnits(amountMajor: number, currency: CurrencyCode) {
   if (!Number.isFinite(amountMajor)) throw new Error("Money amount must be finite.")
   const multiplier = 10 ** MINOR_UNITS[currency]
   return Math.round((amountMajor + Number.EPSILON) * multiplier)
+}
+
+export function parseDecimalToMinorUnits(value: string | number, currency: CurrencyCode) {
+  const raw = String(value).trim()
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error("Money amount must be a positive decimal.")
+  const decimals = MINOR_UNITS[currency]
+  const [whole, fraction = ""] = raw.split(".")
+  if (fraction.length > decimals) throw new Error(`${currency} amounts support at most ${decimals} decimal places.`)
+  const minor = BigInt(whole) * BigInt(10 ** decimals) + BigInt(fraction.padEnd(decimals, "0") || "0")
+  if (minor <= BigInt(0) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Money amount is outside the supported exact range.")
+  }
+  return Number(minor)
 }
 
 export function fromMinorUnits(amountMinor: number, currency: CurrencyCode) {

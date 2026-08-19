@@ -26,6 +26,7 @@ export interface IVehicle extends Document {
   complianceStatus?: 'compliant' | 'warning' | 'non_compliant' | 'uninspected';
   currentOdometerKm?: number;
   hasActiveDowntime?: boolean;
+  version: number;
 }
 
 const VehicleSchema: Schema = new Schema({
@@ -66,6 +67,7 @@ const VehicleSchema: Schema = new Schema({
   },
   currentOdometerKm: { type: Number, default: 0 },
   hasActiveDowntime: { type: Boolean, default: false },
+  version: { type: Number, default: 0 },
 });
 
 export default (mongoose.models.Vehicle ||

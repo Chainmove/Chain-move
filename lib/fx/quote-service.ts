@@ -78,14 +78,11 @@ export class InMemoryQuoteRepository implements QuoteRepository {
       return { ok: false as const, reason: "expired" as const, quote: structuredClone(quote) }
     }
 
-    if (quote.status === "locked") {
-      return { ok: false as const, reason: "locked" as const, quote: structuredClone(quote) }
+    if (quote.status !== "locked") {
+      return { ok: false as const, reason: "conflict" as const, quote: structuredClone(quote) }
     }
 
-    const amountMatches =
-      quote.amountPolicy === "exact-source"
-        ? quote.sourceAmountMajor === input.sourceAmountMajor
-        : quote.sourceAmountMajor >= input.sourceAmountMajor
+    const amountMatches = this.amountMatches(quote, input)
 
     if (!amountMatches) {
       return { ok: false as const, reason: "amount-mismatch" as const, quote: structuredClone(quote) }
@@ -97,7 +94,7 @@ export class InMemoryQuoteRepository implements QuoteRepository {
       quote.quoteCurrency !== input.quoteCurrency ||
       quote.direction !== input.direction ||
       quote.amountPolicy !== input.amountPolicy ||
-      quote.status !== "created"
+      quote.status !== "locked"
     ) {
       return { ok: false as const, reason: "conflict" as const, quote: structuredClone(quote) }
     }
@@ -111,6 +108,20 @@ export class InMemoryQuoteRepository implements QuoteRepository {
     }
     this.quotes.set(input.quoteId, structuredClone(consumed))
     return { ok: true as const, quote: structuredClone(consumed) }
+  }
+
+  private amountMatches(quote: ExchangeRateQuoteSnapshot, input: ConsumeQuoteAtomicInput) {
+    if (input.sourceAmountMinor !== undefined) {
+      return quote.amountPolicy === "exact-source"
+        ? quote.sourceAmountMinor === input.sourceAmountMinor
+        : quote.sourceAmountMinor >= input.sourceAmountMinor
+    }
+
+    if (input.sourceAmountMajor === undefined) return false
+
+    return quote.amountPolicy === "exact-source"
+      ? quote.sourceAmountMajor === input.sourceAmountMajor
+      : quote.sourceAmountMajor >= input.sourceAmountMajor
   }
 }
 
@@ -217,7 +228,8 @@ export class ExchangeRateQuoteService {
     quoteId: string
     baseCurrency: string
     quoteCurrency: string
-    sourceAmountMajor: number
+    sourceAmountMajor?: number
+    sourceAmountMinor?: number
     direction?: QuoteDirection
     amountPolicy?: AmountPolicy
     consumedBy: string
@@ -241,8 +253,9 @@ export class ExchangeRateQuoteService {
       throw new Error("Quote amount policy does not match the requested conversion.")
     }
 
-    if (quote.amountPolicy === "exact-source" && quote.sourceAmountMajor !== input.sourceAmountMajor) {
-      throw new Error("Quote source amount does not match the requested conversion.")
+    if (quote.status !== "locked") {
+      if (quote.status === "consumed") throw new Error("Quote has already been consumed.")
+      throw new Error("Quote must be locked before it can be consumed.")
     }
 
     const result = await this.repository.consume({
@@ -252,6 +265,7 @@ export class ExchangeRateQuoteService {
       quoteCurrency,
       direction: input.direction || "direct",
       sourceAmountMajor: input.sourceAmountMajor,
+      sourceAmountMinor: input.sourceAmountMinor,
       amountPolicy: input.amountPolicy || "exact-source",
       consumedBy: input.consumedBy,
       now,
@@ -308,7 +322,7 @@ export class ExchangeRateQuoteService {
       case "expired":
         return "Quote has expired."
       case "locked":
-        return "Quote is locked and cannot be consumed."
+        return "Quote must be locked before it can be consumed."
       case "amount-mismatch":
         return "Quote source amount does not match the requested conversion."
       default:
