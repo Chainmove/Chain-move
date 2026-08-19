@@ -122,7 +122,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "i128": "4000"
+                  "i128": "3333"
                 },
                 {
                   "u32": 10000
@@ -153,10 +153,10 @@
                   "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
                 },
                 {
-                  "i128": "4000"
+                  "i128": "3333"
                 },
                 {
-                  "string": "fund-1"
+                  "string": "fund-one-shot"
                 }
               ]
             }
@@ -172,60 +172,10 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "close_pool",
+              "function_name": "refund_position",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": "1"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN",
-              "function_name": "approve",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                },
-                {
-                  "i128": "1500"
-                },
-                {
-                  "u32": 10000
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "record_repayment",
-              "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
                 },
                 {
                   "u64": "1"
@@ -234,13 +184,10 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                  "i128": "2222"
                 },
                 {
-                  "i128": "1500"
-                },
-                {
-                  "string": "repay-1"
+                  "string": "refund-one-shot"
                 }
               ]
             }
@@ -248,11 +195,7 @@
           "sub_invocations": []
         }
       ]
-    ],
-    [],
-    [],
-    [],
-    []
+    ]
   ],
   "ledger": {
     "protocol_version": 25,
@@ -333,7 +276,7 @@
                       "symbol": "invested"
                     },
                     "val": {
-                      "i128": "4000"
+                      "i128": "1111"
                     }
                   },
                   {
@@ -357,7 +300,7 @@
                       "symbol": "refunded"
                     },
                     "val": {
-                      "i128": "0"
+                      "i128": "2222"
                     }
                   },
                   {
@@ -365,7 +308,7 @@
                       "symbol": "repaid"
                     },
                     "val": {
-                      "i128": "1500"
+                      "i128": "0"
                     }
                   },
                   {
@@ -373,7 +316,7 @@
                       "symbol": "units"
                     },
                     "val": {
-                      "u64": "40"
+                      "u64": "11"
                     }
                   }
                 ]
@@ -409,7 +352,7 @@
                       "symbol": "active"
                     },
                     "val": {
-                      "bool": false
+                      "bool": true
                     }
                   },
                   {
@@ -433,7 +376,7 @@
                       "symbol": "funded_units"
                     },
                     "val": {
-                      "u64": "40"
+                      "u64": "11"
                     }
                   },
                   {
@@ -473,7 +416,7 @@
                       "symbol": "total_invested"
                     },
                     "val": {
-                      "i128": "4000"
+                      "i128": "1111"
                     }
                   },
                   {
@@ -481,7 +424,7 @@
                       "symbol": "total_repaid"
                     },
                     "val": {
-                      "i128": "1500"
+                      "i128": "0"
                     }
                   },
                   {
@@ -513,7 +456,7 @@
                     "symbol": "Reference"
                   },
                   {
-                    "string": "fund-1"
+                    "string": "fund-one-shot"
                   }
                 ]
               },
@@ -525,7 +468,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "4000"
+                      "i128": "3333"
                     }
                   },
                   {
@@ -577,7 +520,7 @@
                     "symbol": "Reference"
                   },
                   {
-                    "string": "repay-1"
+                    "string": "refund-one-shot"
                   }
                 ]
               },
@@ -589,7 +532,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "1500"
+                      "i128": "2222"
                     }
                   },
                   {
@@ -599,7 +542,7 @@
                     "val": {
                       "vec": [
                         {
-                          "symbol": "Repayment"
+                          "symbol": "Refund"
                         }
                       ]
                     }
@@ -656,7 +599,7 @@
                       "symbol": "basis_invested"
                     },
                     "val": {
-                      "i128": "4000"
+                      "i128": "3333"
                     }
                   },
                   {
@@ -664,7 +607,7 @@
                       "symbol": "basis_units"
                     },
                     "val": {
-                      "u64": "40"
+                      "u64": "33"
                     }
                   },
                   {
@@ -672,7 +615,7 @@
                       "symbol": "cumulative_refunded"
                     },
                     "val": {
-                      "i128": "0"
+                      "i128": "2222"
                     }
                   }
                 ]
@@ -736,46 +679,6 @@
               "key": {
                 "ledger_key_nonce": {
                   "nonce": "8370022561469687789"
-                }
-              },
-              "durability": "temporary",
-              "val": "void"
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 6311999
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "key": {
-                "ledger_key_nonce": {
-                  "nonce": "5806905060045992000"
-                }
-              },
-              "durability": "temporary",
-              "val": "void"
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 6311999
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M",
-              "key": {
-                "ledger_key_nonce": {
-                  "nonce": "6277191135259896685"
                 }
               },
               "durability": "temporary",
@@ -885,67 +788,6 @@
                           "symbol": "from"
                         },
                         "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "spender"
-                        },
-                        "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              },
-              "durability": "temporary",
-              "val": {
-                "map": [
-                  {
-                    "key": {
-                      "symbol": "amount"
-                    },
-                    "val": {
-                      "i128": "0"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "live_until_ledger"
-                    },
-                    "val": {
-                      "u32": 10000
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 10000
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "Allowance"
-                  },
-                  {
-                    "map": [
-                      {
-                        "key": {
-                          "symbol": "from"
-                        },
-                        "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                         }
                       },
@@ -1013,7 +855,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "4000"
+                      "i128": "1111"
                     }
                   },
                   {
@@ -1065,7 +907,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "8500"
+                      "i128": "10000"
                     }
                   },
                   {
@@ -1117,7 +959,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "7500"
+                      "i128": "8889"
                     }
                   },
                   {
@@ -1263,5 +1105,139 @@
       }
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "transfer"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
+              },
+              {
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+              },
+              {
+                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANHUF"
+              }
+            ],
+            "data": {
+              "i128": "2222"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "chainmove_pool_v1"
+              },
+              {
+                "symbol": "pool_refund_v1"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "actor"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "amount"
+                  },
+                  "val": {
+                    "i128": "2222"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "asset"
+                  },
+                  "val": {
+                    "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "pool_id"
+                  },
+                  "val": {
+                    "u64": "1"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "position_id"
+                  },
+                  "val": {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "post_funded_units"
+                  },
+                  "val": {
+                    "u64": "11"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "post_total_invested"
+                  },
+                  "val": {
+                    "i128": "1111"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "post_total_repaid"
+                  },
+                  "val": {
+                    "i128": "0"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reference"
+                  },
+                  "val": {
+                    "string": "refund-one-shot"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "version"
+                  },
+                  "val": {
+                    "u32": 1
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

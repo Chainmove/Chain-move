@@ -152,11 +152,11 @@ impl ChainMovePoolContract {
         publish_transition(
             &env,
             Symbol::new(&env, "pool_created_v1"),
-            &asset,
+            &pool.asset,
             target_amount,
             pool_id,
-            owner.clone(),
-            owner.clone(),
+            pool.owner.clone(),
+            pool.owner.clone(),
             String::from_str(&env, "genesis"),
             0,
             0,
@@ -424,7 +424,8 @@ impl ChainMovePoolContract {
             .ok_or(ContractError::InvestorPositionNotFound)?;
         env.storage().persistent().extend_ttl(&position_key, RENT_THRESHOLD, RENT_EXTEND_TO);
 
-        if amount > position.invested {
+        let refundable = checked_sub_i128(position.invested, position.repaid)?;
+        if amount > refundable {
             return Err(ContractError::NothingToRefund);
         }
 
