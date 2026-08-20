@@ -2,9 +2,9 @@ import path from "path"
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  // Type errors must fail `next build`. Do not reintroduce
+  // `typescript.ignoreBuildErrors` or `eslint.ignoreDuringBuilds` —
+  // see docs/type-safety.md.
   images: {
     unoptimized: true,
   },
