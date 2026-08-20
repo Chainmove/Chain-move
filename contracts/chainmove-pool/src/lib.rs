@@ -2,8 +2,11 @@
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, token, xdr::ToXdr, Address, BytesN, Env,
-    String, Symbol,
+    String, Symbol, Vec,
 };
+
+mod governance;
+pub use governance::{GovernanceConfig, ProposalStatus, UpgradeProposal};
 
 #[contract]
 pub struct ChainMovePoolContract;
@@ -27,6 +30,17 @@ pub enum ContractError {
     NothingToRefund = 13,
     RefundTooSmall = 14,
     InvestmentTooSmall = 15,
+    GovernanceAlreadyInitialized = 16,
+    GovernanceNotInitialized = 17,
+    InvalidGovernanceConfig = 18,
+    NotAnApprover = 19,
+    AlreadyApproved = 20,
+    ProposalNotFound = 21,
+    ProposalNotPending = 22,
+    QuorumNotMet = 23,
+    TimelockNotElapsed = 24,
+    IncompatibleSchemaVersion = 25,
+    StaleProposal = 26,
 }
 
 #[contracttype]
@@ -124,6 +138,10 @@ enum DataKey {
     ScopedReference(BytesN<32>),
     RefundBasis(u64, Address),
     LegacyPool(u64), // Legacy key format for migration testing
+    GovernanceConfig,
+    SchemaVersion,
+    UpgradeProposal(u64),
+    NextProposalId,
 }
 
 const DAY_IN_LEDGERS: u32 = 17280;
@@ -631,6 +649,106 @@ impl ChainMovePoolContract {
             .ok_or(ContractError::ArithmeticOverflow)?;
         Ok((numerator / pool.target_amount) as u64)
     }
+
+    // --- Governed WASM upgrades -------------------------------------------------
+    //
+    // No single signer can move the contract's active WASM: an upgrade must be
+    // proposed by an approver, collect approvals from at least `quorum` distinct
+    // approvers, and wait until a fixed timelock elapses before it can execute.
+    // Execution also re-validates the persisted schema version, so an
+    // incompatible migration can never activate new code against old state.
+
+    /// One-time bootstrap of the governance parameters. Fails if governance
+    /// has already been initialized.
+    pub fn init_governance(
+        env: Env,
+        admin: Address,
+        approvers: Vec<Address>,
+        quorum: u32,
+        timelock_seconds: u64,
+        initial_schema_version: u32,
+    ) -> Result<GovernanceConfig, ContractError> {
+        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        governance::init_governance(
+            &env,
+            admin,
+            approvers,
+            quorum,
+            timelock_seconds,
+            initial_schema_version,
+        )
+    }
+
+    /// Proposes a WASM upgrade to `new_wasm_hash`, declaring the next schema
+    /// version and a commitment to the accompanying migration plan. Only an
+    /// approver may propose. The new schema version must be exactly one
+    /// greater than the currently active schema version.
+    pub fn propose_upgrade(
+        env: Env,
+        proposer: Address,
+        new_wasm_hash: BytesN<32>,
+        new_schema_version: u32,
+        migration_plan_hash: BytesN<32>,
+    ) -> Result<UpgradeProposal, ContractError> {
+        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        governance::propose_upgrade(
+            &env,
+            proposer,
+            new_wasm_hash,
+            new_schema_version,
+            migration_plan_hash,
+        )
+    }
+
+    /// Records an approver's approval for a pending proposal. Each approver
+    /// may approve a given proposal at most once.
+    pub fn approve_upgrade(
+        env: Env,
+        approver: Address,
+        proposal_id: u64,
+    ) -> Result<UpgradeProposal, ContractError> {
+        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        governance::approve_upgrade(&env, approver, proposal_id)
+    }
+
+    /// Cancels a pending proposal. Callable by the original proposer or any
+    /// approver; irreversible once canceled.
+    pub fn cancel_upgrade(
+        env: Env,
+        canceler: Address,
+        proposal_id: u64,
+    ) -> Result<UpgradeProposal, ContractError> {
+        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        governance::cancel_upgrade(&env, canceler, proposal_id)
+    }
+
+    /// Executes a pending proposal once quorum and the timelock have both
+    /// been satisfied and the persisted schema version still matches what
+    /// the proposal was evaluated against. Swaps the contract's WASM and
+    /// advances the persisted schema version.
+    pub fn execute_upgrade(
+        env: Env,
+        executor: Address,
+        proposal_id: u64,
+    ) -> Result<UpgradeProposal, ContractError> {
+        env.storage().instance().extend_ttl(RENT_THRESHOLD, RENT_EXTEND_TO);
+        governance::execute_upgrade(&env, executor, proposal_id)
+    }
+
+    pub fn read_governance_config(env: Env) -> Result<GovernanceConfig, ContractError> {
+        governance::read_governance_config(&env)
+    }
+
+    pub fn read_schema_version(env: Env) -> Result<u32, ContractError> {
+        governance::read_schema_version(&env)
+    }
+
+    pub fn read_upgrade_proposal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Result<UpgradeProposal, ContractError> {
+        governance::read_upgrade_proposal(&env, proposal_id)
+    }
 }
 
 fn scoped_reference_key(
@@ -900,3 +1018,6 @@ fn checked_sub_u64(left: u64, right: u64) -> Result<u64, ContractError> {
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod governance_test;
