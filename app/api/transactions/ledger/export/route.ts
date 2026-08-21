@@ -4,6 +4,7 @@ import { z } from "zod"
 import { normalizeUserRole, requireAuthenticatedUser } from "@/lib/api/route-guard"
 import { parseSearchParams } from "@/lib/api/validation"
 import dbConnect from "@/lib/dbConnect"
+import { createCsvStream } from "@/lib/exports/csv-stream"
 import {
   buildLedgerFilter,
   normalizeLedgerEntry,
@@ -13,7 +14,7 @@ import {
 import Transaction from "@/models/Transaction"
 import "@/models/User"
 
-const EXPORT_LIMIT = 5000
+const CURSOR_BATCH_SIZE = 250
 
 const querySchema = z.object({
   search: z.string().trim().max(120).default(""),
@@ -26,14 +27,6 @@ const querySchema = z.object({
   userType: z.string().trim().max(20).default(""),
   userId: z.string().trim().max(40).default(""),
 })
-
-function csvEscape(value: unknown): string {
-  const raw = value == null ? "" : String(value)
-  if (raw.includes(",") || raw.includes("\"") || raw.includes("\n")) {
-    return `"${raw.replace(/"/g, "\"\"")}"`
-  }
-  return raw
-}
 
 export async function GET(request: Request) {
   try {
@@ -50,7 +43,7 @@ export async function GET(request: Request) {
 
     await dbConnect()
 
-    const params = { ...parsed.data, page: 1, pageSize: EXPORT_LIMIT } as LedgerQueryParams
+    const params = { ...parsed.data, page: 1, pageSize: CURSOR_BATCH_SIZE } as LedgerQueryParams
     const actor: LedgerActor = { id: authContext.user._id.toString(), role }
     const isAdmin = role === "admin"
 
@@ -76,11 +69,12 @@ export async function GET(request: Request) {
       queryFilter.gatewayReference = { $nin: Array.from(duplicateReferences) }
     }
 
-    const pageQuery = Transaction.find(queryFilter).sort({ timestamp: -1 }).limit(EXPORT_LIMIT)
+    // `_id` breaks timestamp ties, so the cursor has a deterministic order even
+    // while new transactions are being written after the export has started.
+    const pageQuery = Transaction.find(queryFilter).sort({ timestamp: -1, _id: -1 })
     if (isAdmin) {
       pageQuery.populate({ path: "userId", select: "name fullName email role" })
     }
-    const transactions = (await pageQuery.lean()) as Array<Record<string, any>>
 
     const headers = [
       "Date",
@@ -96,29 +90,29 @@ export async function GET(request: Request) {
       ...(isAdmin ? ["User", "User Email", "User Type"] : []),
     ]
 
-    const lines = [headers.map(csvEscape).join(",")]
-    for (const tx of transactions) {
-      const entry = normalizeLedgerEntry(tx, duplicateReferences)
-      const row = [
-        entry.timestamp,
-        entry.type,
-        entry.direction,
-        entry.amount,
-        entry.currency,
-        entry.status,
-        entry.reconciliation,
-        entry.method ?? "",
-        entry.reference ?? "",
-        entry.description,
-        ...(isAdmin ? [entry.userName ?? "", entry.userEmail ?? "", entry.userType] : []),
-      ]
-      lines.push(row.map(csvEscape).join(","))
+    async function* rows(): AsyncGenerator<unknown[]> {
+      const cursor = pageQuery.lean().cursor({ batchSize: CURSOR_BATCH_SIZE })
+      for await (const tx of cursor as AsyncIterable<Record<string, any>>) {
+        const entry = normalizeLedgerEntry(tx, duplicateReferences)
+        yield [
+          entry.timestamp,
+          entry.type,
+          entry.direction,
+          entry.amount,
+          entry.currency,
+          entry.status,
+          entry.reconciliation,
+          entry.method ?? "",
+          entry.reference ?? "",
+          entry.description,
+          ...(isAdmin ? [entry.userName ?? "", entry.userEmail ?? "", entry.userType] : []),
+        ]
+      }
     }
 
-    const csv = lines.join("\n")
     const filename = `transaction-ledger-${new Date().toISOString().slice(0, 10)}.csv`
 
-    return new NextResponse(csv, {
+    return new NextResponse(createCsvStream(headers, rows()), {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",

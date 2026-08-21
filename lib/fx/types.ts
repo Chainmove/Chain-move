@@ -19,6 +19,13 @@ export type MoneyMajor = z.infer<typeof MoneyMajorSchema>
 export type QuoteDirection = "direct" | "inverse"
 export type AmountPolicy = "exact-source" | "max-source"
 export type QuoteStatus = "created" | "locked" | "consumed" | "expired"
+export type QuoteConsumeFailureReason =
+  | "not-found"
+  | "already-consumed"
+  | "expired"
+  | "locked"
+  | "amount-mismatch"
+  | "conflict"
 
 export type ExchangeRateQuoteSnapshot = {
   id: string
@@ -45,6 +52,23 @@ export type ExchangeRateQuoteSnapshot = {
   consumedBy?: string
 }
 
+export type ConsumeQuoteAtomicInput = {
+  quoteId: string
+  expectedVersion: number
+  baseCurrency: CurrencyCode
+  quoteCurrency: CurrencyCode
+  direction: QuoteDirection
+  sourceAmountMajor?: number
+  sourceAmountMinor?: number
+  amountPolicy: AmountPolicy
+  consumedBy: string
+  now: Date
+}
+
+export type ConsumeQuoteAtomicResult =
+  | { ok: true; quote: ExchangeRateQuoteSnapshot }
+  | { ok: false; reason: QuoteConsumeFailureReason; quote?: ExchangeRateQuoteSnapshot }
+
 export const MINOR_UNITS: Record<CurrencyCode, number> = {
   NGN: 2,
   USD: 2,
@@ -64,6 +88,19 @@ export function toMinorUnits(amountMajor: number, currency: CurrencyCode) {
   if (!Number.isFinite(amountMajor)) throw new Error("Money amount must be finite.")
   const multiplier = 10 ** MINOR_UNITS[currency]
   return Math.round((amountMajor + Number.EPSILON) * multiplier)
+}
+
+export function parseDecimalToMinorUnits(value: string | number, currency: CurrencyCode) {
+  const raw = String(value).trim()
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error("Money amount must be a positive decimal.")
+  const decimals = MINOR_UNITS[currency]
+  const [whole, fraction = ""] = raw.split(".")
+  if (fraction.length > decimals) throw new Error(`${currency} amounts support at most ${decimals} decimal places.`)
+  const minor = BigInt(whole) * BigInt(10 ** decimals) + BigInt(fraction.padEnd(decimals, "0") || "0")
+  if (minor <= BigInt(0) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Money amount is outside the supported exact range.")
+  }
+  return Number(minor)
 }
 
 export function fromMinorUnits(amountMinor: number, currency: CurrencyCode) {

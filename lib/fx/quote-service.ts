@@ -1,8 +1,11 @@
 import { ExchangeRateProviderAdapter } from "@/lib/fx/adapters"
 import {
   AmountPolicy,
+  ConsumeQuoteAtomicInput,
+  ConsumeQuoteAtomicResult,
   CurrencyCode,
   ExchangeRateQuoteSnapshot,
+  QuoteConsumeFailureReason,
   QuoteDirection,
   assertCurrency,
   convertMajorAmount,
@@ -22,6 +25,7 @@ export interface QuoteRepository {
   findById(id: string): Promise<ExchangeRateQuoteSnapshot | null>
   findByIdempotencyKey(key: string): Promise<ExchangeRateQuoteSnapshot | null>
   update(snapshot: ExchangeRateQuoteSnapshot): Promise<ExchangeRateQuoteSnapshot>
+  consume(input: ConsumeQuoteAtomicInput): Promise<ConsumeQuoteAtomicResult>
 }
 
 export class InMemoryQuoteRepository implements QuoteRepository {
@@ -45,8 +49,79 @@ export class InMemoryQuoteRepository implements QuoteRepository {
   }
 
   async update(snapshot: ExchangeRateQuoteSnapshot) {
-    this.quotes.set(snapshot.id, structuredClone(snapshot))
-    return structuredClone(snapshot)
+    if (snapshot.status === "consumed") {
+      throw new Error("Use atomic consume to consume quotes.")
+    }
+
+    const current = this.quotes.get(snapshot.id)
+    if (current?.status === "consumed" || (current && current.version !== snapshot.version)) {
+      return structuredClone(current)
+    }
+
+    const updated = {
+      ...snapshot,
+      version: (current?.version ?? snapshot.version) + 1,
+    }
+    this.quotes.set(snapshot.id, structuredClone(updated))
+    return structuredClone(updated)
+  }
+
+  async consume(input: ConsumeQuoteAtomicInput) {
+    const quote = this.quotes.get(input.quoteId)
+    if (!quote) return { ok: false as const, reason: "not-found" as const }
+
+    if (quote.status === "consumed") {
+      return { ok: false as const, reason: "already-consumed" as const, quote: structuredClone(quote) }
+    }
+
+    if (quote.expiresAt.getTime() < input.now.getTime() || quote.status === "expired") {
+      return { ok: false as const, reason: "expired" as const, quote: structuredClone(quote) }
+    }
+
+    if (quote.status !== "locked") {
+      return { ok: false as const, reason: "conflict" as const, quote: structuredClone(quote) }
+    }
+
+    const amountMatches = this.amountMatches(quote, input)
+
+    if (!amountMatches) {
+      return { ok: false as const, reason: "amount-mismatch" as const, quote: structuredClone(quote) }
+    }
+
+    if (
+      quote.version !== input.expectedVersion ||
+      quote.baseCurrency !== input.baseCurrency ||
+      quote.quoteCurrency !== input.quoteCurrency ||
+      quote.direction !== input.direction ||
+      quote.amountPolicy !== input.amountPolicy ||
+      quote.status !== "locked"
+    ) {
+      return { ok: false as const, reason: "conflict" as const, quote: structuredClone(quote) }
+    }
+
+    const consumed = {
+      ...quote,
+      version: quote.version + 1,
+      status: "consumed" as const,
+      consumedAt: input.now,
+      consumedBy: input.consumedBy,
+    }
+    this.quotes.set(input.quoteId, structuredClone(consumed))
+    return { ok: true as const, quote: structuredClone(consumed) }
+  }
+
+  private amountMatches(quote: ExchangeRateQuoteSnapshot, input: ConsumeQuoteAtomicInput) {
+    if (input.sourceAmountMinor !== undefined) {
+      return quote.amountPolicy === "exact-source"
+        ? quote.sourceAmountMinor === input.sourceAmountMinor
+        : quote.sourceAmountMinor >= input.sourceAmountMinor
+    }
+
+    if (input.sourceAmountMajor === undefined) return false
+
+    return quote.amountPolicy === "exact-source"
+      ? quote.sourceAmountMajor === input.sourceAmountMajor
+      : quote.sourceAmountMajor >= input.sourceAmountMajor
   }
 }
 
@@ -153,7 +228,8 @@ export class ExchangeRateQuoteService {
     quoteId: string
     baseCurrency: string
     quoteCurrency: string
-    sourceAmountMajor: number
+    sourceAmountMajor?: number
+    sourceAmountMinor?: number
     direction?: QuoteDirection
     amountPolicy?: AmountPolicy
     consumedBy: string
@@ -177,20 +253,26 @@ export class ExchangeRateQuoteService {
       throw new Error("Quote amount policy does not match the requested conversion.")
     }
 
-    if (quote.amountPolicy === "exact-source" && quote.sourceAmountMajor !== input.sourceAmountMajor) {
-      throw new Error("Quote source amount does not match the requested conversion.")
+    if (quote.status !== "locked") {
+      if (quote.status === "consumed") throw new Error("Quote has already been consumed.")
+      throw new Error("Quote must be locked before it can be consumed.")
     }
 
-    if (quote.status === "consumed") {
-      throw new Error("Quote has already been consumed.")
-    }
-
-    return this.repository.update({
-      ...quote,
-      status: "consumed",
-      consumedAt: now,
+    const result = await this.repository.consume({
+      quoteId: quote.id,
+      expectedVersion: quote.version,
+      baseCurrency,
+      quoteCurrency,
+      direction: input.direction || "direct",
+      sourceAmountMajor: input.sourceAmountMajor,
+      sourceAmountMinor: input.sourceAmountMinor,
+      amountPolicy: input.amountPolicy || "exact-source",
       consumedBy: input.consumedBy,
+      now,
     })
+
+    if (result.ok) return result.quote
+    throw new Error(this.consumeFailureMessage(result.reason))
   }
 
   private async resolveProviderQuote(baseCurrency: CurrencyCode, quoteCurrency: CurrencyCode) {
@@ -228,6 +310,23 @@ export class ExchangeRateQuoteService {
 
     if (quote.status === "expired") {
       throw new Error("Quote has expired.")
+    }
+  }
+
+  private consumeFailureMessage(reason: QuoteConsumeFailureReason) {
+    switch (reason) {
+      case "not-found":
+        return "Quote not found."
+      case "already-consumed":
+        return "Quote has already been consumed."
+      case "expired":
+        return "Quote has expired."
+      case "locked":
+        return "Quote must be locked before it can be consumed."
+      case "amount-mismatch":
+        return "Quote source amount does not match the requested conversion."
+      default:
+        return "Quote consumption conflict."
     }
   }
 }

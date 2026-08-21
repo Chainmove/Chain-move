@@ -30,6 +30,9 @@ const envSchema = z
     KYC_ACTIVE_KEY_VERSION: z.string().trim().optional(),
     KYC_PREVIOUS_KEY_VERSIONS: z.string().trim().optional(),
     KYC_ENCRYPTION_KEYS_JSON: z.string().trim().optional(),
+    KYC_DOCUMENT_SIGNING_KEY: z.string().trim().optional(),
+    KYC_DOCUMENT_SIGNING_KEY_ID: z.string().trim().optional(),
+    KYC_DOCUMENT_SIGNING_KEYS_JSON: z.string().trim().optional(),
     PRIVY_APP_ID: z.string().trim().optional(),
     PRIVY_APP_SECRET: z.string().trim().optional(),
     PRIVY_JWKS_URL: optionalUrl,
@@ -75,6 +78,45 @@ const envSchema = z
             code: z.ZodIssueCode.custom,
             path: [key],
             message: `${key} must be a strong non-placeholder production value.`,
+          })
+        }
+      }
+
+      if (!value.KYC_DOCUMENT_SIGNING_KEY && !value.KYC_DOCUMENT_SIGNING_KEYS_JSON) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["KYC_DOCUMENT_SIGNING_KEY"],
+          message: "A dedicated KYC document signing key is required in production.",
+        })
+      } else if (value.KYC_DOCUMENT_SIGNING_KEY && (
+        value.KYC_DOCUMENT_SIGNING_KEY.length < 32 || PLACEHOLDER_PATTERN.test(value.KYC_DOCUMENT_SIGNING_KEY)
+      )) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["KYC_DOCUMENT_SIGNING_KEY"],
+          message: "KYC_DOCUMENT_SIGNING_KEY must be a strong non-placeholder production value.",
+        })
+      }
+
+      if (value.KYC_DOCUMENT_SIGNING_KEYS_JSON) {
+        try {
+          const signingKeys = JSON.parse(value.KYC_DOCUMENT_SIGNING_KEYS_JSON) as {
+            active?: { id?: string; secret?: string }
+            previous?: Array<{ id?: string; secret?: string }>
+          }
+          const keys = [signingKeys.active, ...(signingKeys.previous || [])]
+          if (keys.some((key) => !key?.id || !key.secret || key.secret.length < 32 || PLACEHOLDER_PATTERN.test(key.secret))) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["KYC_DOCUMENT_SIGNING_KEYS_JSON"],
+              message: "Every document signing key must have an ID and a strong non-placeholder secret.",
+            })
+          }
+        } catch {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["KYC_DOCUMENT_SIGNING_KEYS_JSON"],
+            message: "KYC_DOCUMENT_SIGNING_KEYS_JSON must be valid JSON.",
           })
         }
       }
