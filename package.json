@@ -24,7 +24,9 @@
     "backup:drill": "tsx scripts/backup/run-drill.ts",
     "restore": "tsx scripts/backup/run-restore.ts",
     "restore:verify": "tsx scripts/backup/run-restore.ts --verify-only",
-    "restore:token": "tsx scripts/backup/run-restore.ts --generate-token"
+    "restore:token": "tsx scripts/backup/run-restore.ts --generate-token",
+    "repayment:check-schedules": "tsx scripts/check-repayment-schedules.ts",
+    "repayment:repair-schedules": "tsx scripts/check-repayment-schedules.ts --repair"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

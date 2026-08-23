@@ -9,6 +9,7 @@ import {
   type RepaymentScheduleStatus,
 } from "@/lib/contracts/repayment-schedule"
 import { transitionHirePurchaseContract } from "@/lib/services/contract-transition.service"
+import { applyDriverPayment as engineApplyPayment } from "@/lib/repayments/repayment-engine.service"
 import DriverPayment from "@/models/DriverPayment"
 import HirePurchaseContract, { HirePurchaseContractStatus } from "@/models/HirePurchaseContract"
 import InvestorCredit from "@/models/InvestorCredit"
@@ -706,38 +707,21 @@ export async function confirmDriverPayment(
       throw new Error("This contract has already been settled.")
     }
 
-    const appliedAmountNgn = Math.min(verifiedAmountNgn, remainingBeforeNgn)
-    const unappliedAmountNgn = Math.max(verifiedAmountNgn - appliedAmountNgn, 0)
+    // Delegate to the allocation engine for a transparent, deterministic breakdown.
+    // The engine updates totalPaidNgn, nextDueDate, and creates the PaymentAllocation
+    // record atomically inside the same session.
+    const engineResult = await engineApplyPayment(
+      normalizedReference,
+      { verifiedAmountNgn, channel: options.channel, metadata: options.metadata },
+      session,
+    )
 
-    payment.amountNgn = verifiedAmountNgn
-    payment.appliedAmountNgn = appliedAmountNgn
-    payment.status = "CONFIRMED"
-    payment.confirmedAt = new Date()
-    payment.failedReason = undefined
-    payment.metadata = {
-      ...(payment.metadata || {}),
-      ...(options.metadata || {}),
-      channel: options.channel || (payment.metadata as Record<string, unknown> | undefined)?.channel || null,
-      unappliedAmountNgn,
-    }
-    await payment.save({ session })
+    // Re-load the contract so mapContractSnapshot reflects the engine's writes.
+    const updatedContract = await HirePurchaseContract.findById(payment.contractId).session(session)
+    if (!updatedContract) throw new Error("Contract disappeared after engine write.")
 
-    contract.totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0) + appliedAmountNgn)
-    const remainingAfterNgn = computeRemainingBalance(contract.totalPayableNgn, contract.totalPaidNgn)
-    contract.nextDueDate = remainingAfterNgn <= 0 ? null : calculateNextDueDate(contract as any)
-    await contract.save({ session })
-
-    if (remainingAfterNgn <= 0 && contract.status !== "COMPLETED") {
-      const { contract: settledContract } = await transitionHirePurchaseContract({
-        contractId: contract._id.toString(),
-        targetState: "COMPLETED",
-        actor: { type: "system" },
-        reason: "Final repayment installment confirmed; payable balance fully settled.",
-        metadata: { paystackRef: normalizedReference },
-        session,
-      })
-      contract.status = settledContract.status
-    }
+    const appliedAmountNgn = engineResult.allocation.acceptedAmountNgn
+    const unappliedAmountNgn = engineResult.allocation.excessAmountNgn
 
     const existingRepaymentTx = await Transaction.findOne({
       gatewayReference: normalizedReference,
@@ -756,13 +740,14 @@ export async function confirmDriverPayment(
             currency: "NGN",
             method: "paystack",
             status: "Completed",
-            description: `Hire-purchase repayment for ${contract.vehicleDisplayName}`,
-            relatedId: contract._id.toString(),
+            description: `Hire-purchase repayment for ${updatedContract.vehicleDisplayName}`,
+            relatedId: updatedContract._id.toString(),
             gatewayReference: normalizedReference,
             metadata: {
               source: "driver_repayment",
               paymentId: payment._id.toString(),
               unappliedAmountNgn,
+              allocationBreakdown: engineResult.allocation,
             },
           },
         ],
@@ -770,43 +755,16 @@ export async function confirmDriverPayment(
       )
     }
 
-    if (unappliedAmountNgn > 0) {
-      await User.updateOne(
-        { _id: payment.driverUserId },
-        { $inc: { availableBalance: unappliedAmountNgn } },
-        { session },
-      )
-
-      await Transaction.create(
-        [
-          {
-            userId: payment.driverUserId,
-            userType: "driver",
-            type: "wallet_funding",
-            amount: unappliedAmountNgn,
-            currency: "NGN",
-            method: "system",
-            status: "Completed",
-            description: "Unapplied repayment amount credited to internal wallet.",
-            relatedId: contract._id.toString(),
-            gatewayReference: `${normalizedReference}_unapplied`,
-            metadata: {
-              source: "driver_repayment",
-              paymentId: payment._id.toString(),
-            },
-          },
-        ],
-        { session },
-      )
-    }
+    // Excess/unapplied amount is already handled by the engine (wallet credit +
+    // wallet_funding transaction). Skip duplicating it here.
 
     const distribution = await distributePaymentToInvestors(payment._id.toString(), session)
     await session.commitTransaction()
 
     return {
-      alreadyProcessed: false,
+      alreadyProcessed: engineResult.alreadyProcessed,
       payment: mapDriverPaymentSnapshot(payment),
-      contract: mapContractSnapshot(contract),
+      contract: mapContractSnapshot(updatedContract),
       distribution,
     }
   } catch (error) {
