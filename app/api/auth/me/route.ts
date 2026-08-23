@@ -15,7 +15,6 @@ function toAuthResponse(user: any) {
     physicalMeetingStatus: user.physicalMeetingStatus || "none",
     isKycVerified: user.isKycVerified === true,
     kycVerified: user.kycVerified === true,
-    notifications: Array.isArray(user.notifications) ? user.notifications : [],
   }
 }
 
@@ -26,7 +25,7 @@ export async function GET(request: Request) {
     const session = await getSessionFromCookies()
     if (session?.userId) {
       const user = await User.findById(session.userId).select(
-        `${USER_PROFILE_SELECT} kycStatus kycDocuments kycRejectionReason physicalMeetingDate physicalMeetingStatus isKycVerified kycVerified notifications`,
+        `${USER_PROFILE_SELECT} kycStatus kycDocuments kycRejectionReason physicalMeetingDate physicalMeetingStatus isKycVerified kycVerified`,
       )
 
       if (!user) {
@@ -48,7 +47,7 @@ export async function GET(request: Request) {
     const user = await User.findOne({
       $or: [{ privyUserId: profile.privyUserId }, ...(profile.email ? [{ email: profile.email.toLowerCase() }] : [])],
     }).select(
-      `${USER_PROFILE_SELECT} kycStatus kycDocuments kycRejectionReason physicalMeetingDate physicalMeetingStatus isKycVerified kycVerified notifications`,
+      `${USER_PROFILE_SELECT} kycStatus kycDocuments kycRejectionReason physicalMeetingDate physicalMeetingStatus isKycVerified kycVerified`,
     )
 
     if (!user) {

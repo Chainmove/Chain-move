@@ -3,14 +3,6 @@
 import { useState, useEffect, useCallback } from "react"
 
 export interface AuthUser {
-  notifications?: Array<{
-    id: string
-    title: string
-    message: string
-    read: boolean
-    timestamp: string
-    link?: string
-  }>
   id: string
   name?: string
   fullName?: string
