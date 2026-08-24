@@ -27,6 +27,7 @@
     "restore:token": "tsx scripts/backup/run-restore.ts --generate-token",
     "repayment:check-schedules": "tsx scripts/check-repayment-schedules.ts",
     "repayment:repair-schedules": "tsx scripts/check-repayment-schedules.ts --repair"
+    "privacy:sweep": "tsx scripts/privacy-sweep.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
