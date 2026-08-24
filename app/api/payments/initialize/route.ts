@@ -2,6 +2,7 @@ import { PaymentInitializeRequestSchema, PaymentInitializeResponseSchema } from 
 import { ApiError } from "@/lib/api/errors"
 import { defineRoute } from "@/lib/api/route-handler"
 import { money } from "@/lib/api/serialization"
+import { generateReferenceId } from "@/lib/ids/reference-id"
 import {
   buildRateLimitKey,
   consumeRateLimit,
@@ -60,7 +61,7 @@ export const POST = defineRoute({
       )
     }
 
-    const reference = `cm_wallet_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    const reference = generateReferenceId({ prefix: "cm_wallet" })
 
     let payload: {
       status?: boolean

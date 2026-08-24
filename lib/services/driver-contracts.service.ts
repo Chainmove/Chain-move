@@ -8,6 +8,7 @@ import {
   type DriverRepaymentScheduleItem,
   type RepaymentScheduleStatus,
 } from "@/lib/contracts/repayment-schedule"
+import { generateReferenceId } from "@/lib/ids/reference-id"
 import { transitionHirePurchaseContract } from "@/lib/services/contract-transition.service"
 import DriverPayment from "@/models/DriverPayment"
 import HirePurchaseContract, { HirePurchaseContractStatus } from "@/models/HirePurchaseContract"
@@ -217,8 +218,17 @@ function mapDriverPaymentSnapshot(payment: any): DriverPaymentSnapshot {
   }
 }
 
+const MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES = 3
+
 function buildDriverPaymentReference() {
-  return `cm_driver_repay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return generateReferenceId({ prefix: "cm_driver_repay" })
+}
+
+/** True when a Mongo duplicate-key error was raised by the unique `paystackRef` index specifically. */
+function isPaystackRefCollision(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { code?: number; keyPattern?: Record<string, unknown> }
+  return candidate.code === 11000 && Boolean(candidate.keyPattern && "paystackRef" in candidate.keyPattern)
 }
 
 async function runWithOptionalSession<T>(
@@ -353,19 +363,49 @@ export async function createDriverPayment({
     throw new Error(`Amount exceeds remaining balance of NGN ${remainingBalanceNgn.toLocaleString("en-NG")}.`)
   }
 
-  const payment = await DriverPayment.create({
+  const callerSuppliedReference = paystackRef?.trim()
+  const basePaymentFields = {
     contractId: contract._id,
     driverUserId: driverObjectId,
     amountNgn: normalizedAmountNgn,
     appliedAmountNgn: 0,
-    method: "PAYSTACK",
-    paystackRef: paystackRef || buildDriverPaymentReference(),
+    method: "PAYSTACK" as const,
     payerEmail: payerEmail?.trim().toLowerCase() || undefined,
     metadata,
-    status: "PENDING",
-  })
+    status: "PENDING" as const,
+  }
 
-  return mapDriverPaymentSnapshot(payment)
+  if (callerSuppliedReference) {
+    // A caller-supplied reference is the caller's own idempotency key — a
+    // collision here is a genuine conflict, not something to retry past.
+    const payment = await DriverPayment.create({ ...basePaymentFields, paystackRef: callerSuppliedReference })
+    return mapDriverPaymentSnapshot(payment)
+  }
+
+  for (let attempt = 1; attempt <= MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES; attempt++) {
+    const generatedReference = buildDriverPaymentReference()
+    try {
+      const payment = await DriverPayment.create({ ...basePaymentFields, paystackRef: generatedReference })
+      return mapDriverPaymentSnapshot(payment)
+    } catch (error) {
+      if (!isPaystackRefCollision(error)) throw error
+      if (attempt === MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES) {
+        throw new Error(
+          `Failed to generate a unique payment reference after ${MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES} attempts.`,
+        )
+      }
+      console.warn("DRIVER_PAYMENT_REFERENCE_COLLISION_RETRY", {
+        attempt,
+        generatedReference,
+        contractId,
+        driverUserId,
+      })
+    }
+  }
+
+  throw new Error(
+    `Failed to generate a unique payment reference after ${MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES} attempts.`,
+  )
 }
 
 export async function createDriverTransferPayment({

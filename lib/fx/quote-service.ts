@@ -1,4 +1,5 @@
 import { ExchangeRateProviderAdapter } from "@/lib/fx/adapters"
+import { generateReferenceId } from "@/lib/ids/reference-id"
 import {
   AmountPolicy,
   ConsumeQuoteAtomicInput,
@@ -134,7 +135,7 @@ function deviationBps(a: number, b: number) {
 }
 
 function makeId() {
-  return `fxq_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  return generateReferenceId({ prefix: "fxq" })
 }
 
 export class ExchangeRateQuoteService {
