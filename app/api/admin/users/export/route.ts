@@ -3,15 +3,8 @@ import { NextResponse } from "next/server"
 import dbConnect from "@/lib/dbConnect"
 import { withSessionRefresh } from "@/lib/auth/current-user"
 import { authorizeRequest } from "@/lib/authorization/route"
+import { csvEscape } from "@/lib/exports/csv-stream"
 import User from "@/models/User"
-
-function csvEscape(value: unknown): string {
-  const raw = value == null ? "" : String(value)
-  if (raw.includes(",") || raw.includes("\"") || raw.includes("\n")) {
-    return `"${raw.replace(/"/g, "\"\"")}"`
-  }
-  return raw
-}
 
 export async function GET(request: Request) {
   try {

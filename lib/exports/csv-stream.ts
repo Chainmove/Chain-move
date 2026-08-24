@@ -1,10 +1,46 @@
 const encoder = new TextEncoder()
 
+// OWASP CSV Injection: https://owasp.org/www-community/attacks/CSV_Injection
+// lists these ASCII/full-width sigils as formula starters, plus Tab/CR/LF as
+// dangerous leading characters in their own right (legacy DDE-launch vector).
+const FORMULA_SIGILS = new Set(["=", "+", "-", "@", "＝", "＋", "－", "＠"])
+const DIRECT_TRIGGER_CHARS = new Set<string>([...FORMULA_SIGILS, "\t", "\r", "\n"])
+// Some spreadsheet parsers trim ordinary leading whitespace/control bytes
+// before evaluating a formula sigil, so a payload can hide behind them
+// (e.g. " =cmd(...)"). Re-check the first character that survives a strip.
+const LEADING_WHITESPACE_OR_CONTROL = /^[\s\x00-\x1F\x7F]+/
+const NEEDS_QUOTING = /["\r\n,]/
+
+function startsWithFormulaTrigger(raw: string): boolean {
+  if (raw.length === 0) return false
+  if (DIRECT_TRIGGER_CHARS.has(raw[0])) return true
+  const visible = raw.replace(LEADING_WHITESPACE_OR_CONTROL, "")
+  return visible.length > 0 && FORMULA_SIGILS.has(visible[0])
+}
+
+/**
+ * Encodes a single CSV cell: RFC 4180 quoting plus formula-injection
+ * neutralization (OWASP CSV Injection). Trusted primitives (number, boolean,
+ * bigint, Date) are stringified as-is — only string content, the only place
+ * user-controlled text reaches an export, is checked for a formula trigger —
+ * so ordinary numeric and date values are never altered.
+ *
+ * A detected trigger is neutralized by prepending a single quote, the same
+ * "treat as text" convention Excel, Google Sheets, and LibreOffice Calc use
+ * on import; combined with quoting/doubling for embedded quotes, commas, and
+ * newlines, this applies all three sanitization techniques OWASP lists.
+ *
+ * O(n) in the length of the cell value; at most one extra string copy for
+ * the sigil prefix and one for quote-doubling, both inherent to the encoding.
+ */
 export function csvEscape(value: unknown): string {
-  const raw = value == null ? "" : String(value)
-  return raw.includes(",") || raw.includes("\"") || raw.includes("\n")
-    ? `"${raw.replace(/"/g, "\"\"")}"`
-    : raw
+  if (value == null) return ""
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    return String(value)
+  }
+  const raw = value instanceof Date ? value.toISOString() : String(value)
+  const neutralized = startsWithFormulaTrigger(raw) ? `'${raw}` : raw
+  return NEEDS_QUOTING.test(neutralized) ? `"${neutralized.replace(/"/g, "\"\"")}"` : neutralized
 }
 
 /**
