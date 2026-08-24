@@ -445,7 +445,13 @@ export async function reverseDriverPayment(input: ReversePaymentInput): Promise<
 
     // Recalculate next due date.
     const updatedInstallments = buildInstallmentStates(
-      { ...contract.toObject(), totalPaidNgn: newTotalPaidNgn },
+      {
+        startDate: (contract as any).startDate,
+        weeklyPaymentNgn: Number((contract as any).weeklyPaymentNgn || 0),
+        durationWeeks: Number((contract as any).durationWeeks || 0),
+        totalPaidNgn: newTotalPaidNgn,
+        totalPayableNgn: Number((contract as any).totalPayableNgn || 0),
+      },
       new Date(),
     )
     const nextDueDate = calculateNextDueDateFromSchedule(updatedInstallments)
@@ -609,7 +615,13 @@ export async function repairContractBalance(contractId: string): Promise<{ repai
   )
 
   const installments = buildInstallmentStates(
-    { ...contract.toObject(), totalPaidNgn: derivedTotalPaidNgn },
+    {
+      startDate: (contract as any).startDate,
+      weeklyPaymentNgn: Number((contract as any).weeklyPaymentNgn || 0),
+      durationWeeks: Number((contract as any).durationWeeks || 0),
+      totalPaidNgn: derivedTotalPaidNgn,
+      totalPayableNgn: Number((contract as any).totalPayableNgn || 0),
+    },
     new Date(),
   )
   const nextDueDate = calculateNextDueDateFromSchedule(installments)

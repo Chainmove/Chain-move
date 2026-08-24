@@ -712,7 +712,7 @@ export async function confirmDriverPayment(
     // record atomically inside the same session.
     const engineResult = await engineApplyPayment(
       normalizedReference,
-      { verifiedAmountNgn, channel: options.channel, metadata: options.metadata },
+      { gatewayRef: normalizedReference, verifiedAmountNgn, channel: options.channel, metadata: options.metadata },
       session,
     )
 
