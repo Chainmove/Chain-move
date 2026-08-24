@@ -24,7 +24,8 @@
     "backup:drill": "tsx scripts/backup/run-drill.ts",
     "restore": "tsx scripts/backup/run-restore.ts",
     "restore:verify": "tsx scripts/backup/run-restore.ts --verify-only",
-    "restore:token": "tsx scripts/backup/run-restore.ts --generate-token"
+    "restore:token": "tsx scripts/backup/run-restore.ts --generate-token",
+    "privacy:sweep": "tsx scripts/privacy-sweep.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
