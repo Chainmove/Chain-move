@@ -181,9 +181,15 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Deprecated. The Notification collection is the single source of truth for
+    // notification content and read state; nothing writes here any more. The
+    // field is retained, never selected by default and without a default value,
+    // so scripts/migrate-embedded-notifications.ts can backfill and unset the
+    // legacy documents that still carry it.
     notifications: {
       type: [NotificationSchema],
-      default: [],
+      default: undefined,
+      select: false,
     },
     stellarPublicKey: {
       type: String,

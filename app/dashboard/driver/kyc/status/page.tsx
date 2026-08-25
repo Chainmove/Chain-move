@@ -229,7 +229,6 @@ export default function KycStatusPage() {
           <Header
             userName={authUser.name || "Driver"}
             userStatus="Driver"
-            notificationCount={authUser.notifications?.filter((n) => !n.read).length || 0} // Display unread notifications
             className="md:pl-6 lg:pl-8"
           />
           <div className="p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6 md:space-y-8 max-w-full overflow-x-hidden">

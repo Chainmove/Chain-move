@@ -53,8 +53,11 @@ export async function POST(request: Request) {
 
     await dbConnect()
 
-    const targetUser = await User.findById(body.data.userId).select("notifications")
-    if (!targetUser) {
+    // Existence check only: the Notification collection is the single source of
+    // truth for notification content and read state, so nothing is written back
+    // onto the user document here.
+    const recipientExists = await User.exists({ _id: body.data.userId })
+    if (!recipientExists) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }
 
@@ -68,17 +71,6 @@ export async function POST(request: Request) {
       priority: body.data.priority,
       link: body.data.actionUrl,
     })
-
-    targetUser.notifications = Array.isArray(targetUser.notifications) ? targetUser.notifications : []
-    targetUser.notifications.push({
-      id: notification._id.toString(),
-      title: body.data.title,
-      message: body.data.message,
-      read: false,
-      timestamp: new Date(),
-      link: body.data.actionUrl,
-    })
-    await targetUser.save()
 
     await logAuditEvent({
       actor: authContext.user,
