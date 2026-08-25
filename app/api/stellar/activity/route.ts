@@ -4,6 +4,7 @@ import { getStellarClient } from "@/lib/stellar/client"
 import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
 import dbConnect from "@/lib/dbConnect"
 import StellarIndexedEvent from "@/models/StellarIndexedEvent"
+import { classifyAsset } from "@/lib/stellar/asset-identity"
 
 export async function GET(request: Request) {
   try {
@@ -29,10 +30,12 @@ export async function GET(request: Request) {
       // Return mock balances and activities
       const demoAccount = user.stellarPublicKey || "GD3MOCKACCOUNT123456789"
       
+      const cmoveIssuer = config.issuerPublicKey || "GCFZPZ2GCK4V72UUMOO000000000000000000000000000000000000000"
+      const usdcIssuer = "GBBD47IF2H737MZRLT27725J5N5F3GZLU54B7S5XZPZ2GCK4V72UUMOO"
       const mockBalances = [
-        { asset: "XLM", balance: "10000.00", type: "native" },
-        { asset: "USDC", balance: "2450.50", type: "credit", issuer: "GBBD47IF2H737MZRLT27725J5N5F3GZLU54B7S5XZPZ2GCK4V72UUMOO" },
-        { asset: "CMOVE", balance: "5000.00", type: "credit", issuer: config.issuerPublicKey || "GCFZPZ2GCK4V72UUMOO000000000000000000000000000000000000000" }
+        { ...classifyAsset("XLM", null, config), balance: "10000.00", type: "native" },
+        { ...classifyAsset("USDC", usdcIssuer, config), balance: "2450.50", type: "credit" },
+        { ...classifyAsset(config.assetCode, cmoveIssuer, config), balance: "5000.00", type: "credit" },
       ]
 
       const mockActivities = [
@@ -144,10 +147,13 @@ export async function GET(request: Request) {
       const client = getStellarClient(config)
       const accountInfo = await client.horizon.loadAccount(stellarPublicKey)
       balances = accountInfo.balances.map((b: any) => ({
-        asset: b.asset_type === "native" ? "XLM" : b.asset_code,
+        ...classifyAsset(
+          b.asset_type === "native" ? "XLM" : b.asset_code,
+          b.asset_issuer,
+          config,
+        ),
         balance: b.balance,
         type: b.asset_type,
-        issuer: b.asset_issuer || null,
       }))
     } catch (err: any) {
       if (err?.response?.status === 404) {
@@ -201,13 +207,19 @@ export async function GET(request: Request) {
           break
       }
 
+      const rawIssuer = (e.raw?.asset_issuer as string | undefined) ?? null
+      const assetId = classifyAsset(e.asset, rawIssuer, config)
+
       return {
         id: e._id,
         chainMoveRecordType: e.chainMoveRecordType,
         eventType: e.eventType,
         title,
         amount: e.amount || "0.00",
-        asset: e.asset || "XLM",
+        asset: assetId.asset,
+        assetIssuer: assetId.issuer,
+        assetVerified: assetId.verified,
+        assetCanonicalId: assetId.canonicalId,
         date: e.stellarCreatedAt || e.createdAt.toISOString(),
         status: "Confirmed",
         sourceAccount: e.sourceAccount,

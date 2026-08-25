@@ -142,8 +142,8 @@ describe("GET /api/stellar/activity", () => {
     expect(response.status).toBe(200)
     expect(loadAccount).toHaveBeenCalledWith(user.stellarPublicKey)
     expect(payload.balances).toEqual([
-      { asset: "XLM", balance: "150.00", type: "native", issuer: null },
-      { asset: "USDC", balance: "20.00", type: "credit_alphanum4", issuer: "GDUSDC" },
+      { asset: "XLM", issuer: null, verified: true, canonicalId: "XLM:native", balance: "150.00", type: "native" },
+      { asset: "USDC", issuer: "GDUSDC", verified: false, canonicalId: "USDC:GDUSDC", balance: "20.00", type: "credit_alphanum4" },
     ])
     expect(payload.activities[0].id).toBe("tx-1")
     expect(payload.activities[0].title).toBe("Repayment Settlement")
