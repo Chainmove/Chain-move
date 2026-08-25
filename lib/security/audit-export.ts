@@ -3,7 +3,7 @@ import TamperEvidentAuditLog from "@/models/TamperEvidentAuditLog"
 import AuditCheckpoint from "@/models/AuditCheckpoint"
 import { verifyAuditChain } from "./audit-verification"
 import { buildCanonicalAuditEventData, canonicalizeEventData, computeEventHash, redactPII } from "./audit-hash"
-import { createCsvStream } from "@/lib/exports/csv-stream"
+import { createCsvStream, csvEscape } from "@/lib/exports/csv-stream"
 
 export interface ExportOptions {
   partition: string
@@ -277,7 +277,7 @@ export function exportToCSV(events: any[]): string {
     event.isLegacy ? "true" : "false",
   ])
 
-  const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n")
+  const csvContent = [headers, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n")
 
   return csvContent
 }
