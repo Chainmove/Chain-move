@@ -27,6 +27,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# scratch file written by scripts/check-typecheck-gate.ts
+lib/__typecheck-gate-probe__.ts
 
 # rust
 /target

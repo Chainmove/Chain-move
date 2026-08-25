@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
+import type { NextRouteContext } from "@/lib/api/route-handler"
+
 const getAuthenticatedUser = vi.fn()
 const withSessionRefresh = vi.fn(async (response: unknown, _user: unknown) => response)
 const logAuthorizationDenial = vi.fn(async (_input: unknown) => undefined)
@@ -18,6 +20,12 @@ vi.mock("@/lib/authorization/audit", () => ({
 const { defineRoute } = await import("@/lib/api/route-handler")
 const { ApiError } = await import("@/lib/api/errors")
 const { DEPRECATED_API_VERSIONS } = await import("@/lib/api/versioning")
+
+/**
+ * Next.js always passes a route context; routes without dynamic segments
+ * simply receive empty params. Tests mirror that call shape.
+ */
+const noParams: NextRouteContext = { params: Promise.resolve({}) }
 
 const INVESTOR_ID = "665f1a2b3c4d5e6f70819203"
 const OTHER_ID = "665f1a2b3c4d5e6f70819999"
@@ -57,7 +65,7 @@ describe("defineRoute — request validation", () => {
   })
 
   it("rejects malformed JSON with a stable code rather than a parser message", async () => {
-    const response = await route(jsonRequest("{ not json"))
+    const response = await route(jsonRequest("{ not json"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(400)
@@ -68,7 +76,7 @@ describe("defineRoute — request validation", () => {
   })
 
   it("returns field-level errors for an invalid body", async () => {
-    const response = await route(jsonRequest({ amount: -5 }))
+    const response = await route(jsonRequest({ amount: -5 }), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(400)
@@ -79,7 +87,7 @@ describe("defineRoute — request validation", () => {
   })
 
   it("reports unknown body fields instead of silently dropping them", async () => {
-    const response = await route(jsonRequest({ amount: 5, exchangeRate: 1500 }))
+    const response = await route(jsonRequest({ amount: 5, exchangeRate: 1500 }), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(400)
@@ -89,6 +97,7 @@ describe("defineRoute — request validation", () => {
   it("rejects a non-JSON content type", async () => {
     const response = await route(
       jsonRequest("amount=5", { headers: { "content-type": "application/x-www-form-urlencoded" } }),
+      noParams,
     )
 
     expect(response.status).toBe(415)
@@ -105,7 +114,7 @@ describe("defineRoute — request validation", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await queryRoute(new Request("https://chainmove.test/api/thing?page=abc"))
+    const response = await queryRoute(new Request("https://chainmove.test/api/thing?page=abc"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(400)
@@ -129,7 +138,7 @@ describe("defineRoute — authentication and authorization", () => {
   it("returns 401 when unauthenticated", async () => {
     authenticateAs(null)
 
-    const response = await ownedRoute(new Request("https://chainmove.test/api/thing"))
+    const response = await ownedRoute(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(401)
     expect((await response.json()).code).toBe("UNAUTHENTICATED")
@@ -147,7 +156,7 @@ describe("defineRoute — authentication and authorization", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await adminRoute(new Request("https://chainmove.test/api/thing"))
+    const response = await adminRoute(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(403)
     expect((await response.json()).code).toBe("FORBIDDEN")
@@ -164,7 +173,7 @@ describe("defineRoute — authentication and authorization", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await foreignRoute(new Request("https://chainmove.test/api/thing"))
+    const response = await foreignRoute(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(404)
@@ -186,7 +195,7 @@ describe("defineRoute — authentication and authorization", () => {
       handler,
     })
 
-    const response = await missingRoute(new Request("https://chainmove.test/api/thing"))
+    const response = await missingRoute(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(404)
     expect(handler).not.toHaveBeenCalled()
@@ -259,7 +268,7 @@ describe("defineRoute — error mapping", () => {
   it("never leaks an unexpected error message", async () => {
     const route = routeThrowing(new Error("connect ECONNREFUSED mongodb://user:pa55w0rd@10.0.0.5:27017"))
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(500)
@@ -273,7 +282,7 @@ describe("defineRoute — error mapping", () => {
     const error = new Error("boom")
     error.stack = "Error: boom\n    at /srv/chainmove/lib/services/investments.service.ts:142:9"
 
-    const response = await routeThrowing(error)(new Request("https://chainmove.test/api/thing"))
+    const response = await routeThrowing(error)(new Request("https://chainmove.test/api/thing"), noParams)
     const body = JSON.stringify(await response.json())
 
     expect(body).not.toContain("at /srv")
@@ -286,7 +295,7 @@ describe("defineRoute — error mapping", () => {
       Object.assign(new Error("Transaction aborted"), { errorLabels: ["TransientTransactionError"] }),
     )
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(503)
     expect((await response.json()).code).toBe("TRANSIENT_CONFLICT")
@@ -297,7 +306,7 @@ describe("defineRoute — error mapping", () => {
       Object.assign(new Error("E11000 duplicate key error collection: users index: email_1"), { code: 11000 }),
     )
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(409)
@@ -311,7 +320,7 @@ describe("defineRoute — error mapping", () => {
       }),
     )
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(502)
@@ -322,7 +331,7 @@ describe("defineRoute — error mapping", () => {
   it("attaches a correlation id to every error", async () => {
     const route = routeThrowing(new Error("boom"))
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(payload.correlationId).toMatch(/^[0-9a-f-]{36}$/)
@@ -334,6 +343,7 @@ describe("defineRoute — error mapping", () => {
 
     const response = await route(
       new Request("https://chainmove.test/api/thing", { headers: { "x-correlation-id": "edge-abc-123" } }),
+      noParams,
     )
 
     expect((await response.json()).correlationId).toBe("edge-abc-123")
@@ -356,7 +366,7 @@ describe("defineRoute — response serialization", () => {
         }) as never,
     })
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(payload).toEqual({ success: true, value: "ok" })
@@ -372,7 +382,7 @@ describe("defineRoute — response serialization", () => {
       handler: async () => ({ success: true as const }) as never,
     })
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
     const payload = await response.json()
 
     expect(response.status).toBe(500)
@@ -393,7 +403,7 @@ describe("defineRoute — response serialization", () => {
       }),
     })
 
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(500)
     expect((await response.json()).code).toBe("INTERNAL_ERROR")
@@ -411,7 +421,7 @@ describe("defineRoute — response serialization", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await route(jsonRequest({}))
+    const response = await route(jsonRequest({}), noParams)
 
     expect(response.status).toBe(201)
     expect(withSessionRefresh).toHaveBeenCalledTimes(1)
@@ -429,7 +439,7 @@ describe("defineRoute — versioning and deprecation", () => {
   })
 
   it("reports the serving version on success", async () => {
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.status).toBe(200)
     expect(response.headers.get("X-API-Version")).toBe("2026-01-01")
@@ -438,6 +448,7 @@ describe("defineRoute — versioning and deprecation", () => {
   it("honours a supported pinned version", async () => {
     const response = await route(
       new Request("https://chainmove.test/api/thing", { headers: { "X-API-Version": "2026-01-01" } }),
+      noParams,
     )
 
     expect(response.status).toBe(200)
@@ -446,6 +457,7 @@ describe("defineRoute — versioning and deprecation", () => {
   it("rejects an unsupported version with a stable code", async () => {
     const response = await route(
       new Request("https://chainmove.test/api/thing", { headers: { "X-API-Version": "1999-01-01" } }),
+      noParams,
     )
     const payload = await response.json()
 
@@ -470,7 +482,7 @@ describe("defineRoute — versioning and deprecation", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await deprecated(new Request("https://chainmove.test/api/thing"))
+    const response = await deprecated(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.headers.get("Deprecation")).toContain("2026")
     expect(response.headers.get("Sunset")).toContain("2026")
@@ -491,6 +503,7 @@ describe("defineRoute — versioning and deprecation", () => {
     try {
       const response = await route(
         new Request("https://chainmove.test/api/thing", { headers: { "X-API-Version": "2026-01-01" } }),
+        noParams,
       )
 
       // A deprecated version still works until its sunset date.
@@ -526,7 +539,7 @@ describe("defineRoute — versioning and deprecation", () => {
     })
 
     try {
-      const response = await deprecatedEndpoint(new Request("https://chainmove.test/api/thing"))
+      const response = await deprecatedEndpoint(new Request("https://chainmove.test/api/thing"), noParams)
 
       // The endpoint notice is the more specific signal for this caller.
       expect(response.headers.get("Link")).toContain("docs/endpoint")
@@ -537,7 +550,7 @@ describe("defineRoute — versioning and deprecation", () => {
   })
 
   it("sends no deprecation headers on a current version", async () => {
-    const response = await route(new Request("https://chainmove.test/api/thing"))
+    const response = await route(new Request("https://chainmove.test/api/thing"), noParams)
 
     expect(response.headers.get("Deprecation")).toBeNull()
     expect(response.headers.get("Sunset")).toBeNull()
@@ -554,7 +567,7 @@ describe("defineRoute — versioning and deprecation", () => {
       handler: async () => ({ success: true as const, value: "ok" }),
     })
 
-    const response = await paginated(new Request("https://chainmove.test/api/thing?limit=10"))
+    const response = await paginated(new Request("https://chainmove.test/api/thing?limit=10"), noParams)
 
     expect(response.headers.get("Warning")).toContain("'limit' query parameter is deprecated")
   })

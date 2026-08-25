@@ -57,9 +57,13 @@ Run:
 
 ```bash
 npm run lint
-npx tsc --noEmit
+npm run typecheck
 npm run build
 ```
+
+`next build` fails on any TypeScript error, and CI runs the same checks. Do not
+disable them with `typescript.ignoreBuildErrors` or a file-level `@ts-nocheck` —
+see [docs/type-safety.md](docs/type-safety.md).
 
 ## PR scope
 
@@ -148,6 +152,7 @@ Before opening a PR run:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run build
 ```
 

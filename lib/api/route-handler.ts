@@ -35,6 +35,18 @@ type AuthMode = "public" | "authenticated" | "webhook"
 
 type AuthenticatedUser = { _id: unknown; role?: unknown; [key: string]: unknown }
 
+/**
+ * Second argument Next.js passes to an App Router route handler.
+ *
+ * This mirrors the `RouteContext` shape in the generated `.next/types` route
+ * contracts — required, with `params` always a promise — so `next build`
+ * accepts every handler `defineRoute` produces. Widening it (for example back
+ * to an optional argument) makes the generated contract check fail.
+ */
+export type NextRouteContext = {
+  params: Promise<Record<string, string | string[] | undefined>>
+}
+
 export interface RouteContext<TParams, TQuery, TBody, TAuth extends AuthMode> {
   request: Request
   params: TParams
@@ -106,10 +118,7 @@ export function defineRoute<
   TResponseSchema extends z.ZodTypeAny = z.ZodTypeAny,
   TAuth extends AuthMode = "authenticated",
 >(definition: RouteDefinition<TParamsSchema, TQuerySchema, TBodySchema, TResponseSchema, TAuth>) {
-  return async function routeHandler(
-    request: Request,
-    nextContext?: { params?: Promise<Record<string, string>> | Record<string, string> },
-  ): Promise<Response> {
+  return async function routeHandler(request: Request, nextContext: NextRouteContext): Promise<Response> {
     const correlationId = resolveCorrelationId(request)
     const extraHeaders: Record<string, string> = {}
     let successStatus = definition.successStatus ?? (definition.method === "POST" ? 201 : 200)
@@ -181,7 +190,9 @@ export class NoContent {}
 
 async function parseParams(
   definition: { params?: z.ZodTypeAny },
-  nextContext?: { params?: Promise<Record<string, string>> | Record<string, string> },
+  // Optional here, not in the exported handler signature: direct callers such
+  // as tests may omit the context entirely, while Next.js always supplies it.
+  nextContext: NextRouteContext | undefined,
 ) {
   if (!definition.params) return undefined
 

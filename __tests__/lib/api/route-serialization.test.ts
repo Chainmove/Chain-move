@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import type { NextRouteContext } from "@/lib/api/route-handler"
+
 /**
  * End-to-end serialization tests for the converted routes.
  *
@@ -64,6 +66,12 @@ function chainable(result: unknown) {
   return chain
 }
 
+/**
+ * Next.js always passes a route context; routes without dynamic segments
+ * simply receive empty params. Tests mirror that call shape.
+ */
+const noParams: NextRouteContext = { params: Promise.resolve({}) }
+
 const INVESTOR_ID = "665f1a2b3c4d5e6f70819203"
 
 function authenticateAs(role: string, overrides: Record<string, unknown> = {}) {
@@ -104,7 +112,7 @@ describe("GET /api/wallet/summary", () => {
     )
 
     const { GET } = await import("@/app/api/wallet/summary/route")
-    const response = await GET(new Request("https://chainmove.test/api/wallet/summary"))
+    const response = await GET(new Request("https://chainmove.test/api/wallet/summary"), noParams)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -135,7 +143,7 @@ describe("GET /api/wallet/summary", () => {
     )
 
     const { GET } = await import("@/app/api/wallet/summary/route")
-    const body = await (await GET(new Request("https://chainmove.test/api/wallet/summary"))).json()
+    const body = await (await GET(new Request("https://chainmove.test/api/wallet/summary"), noParams)).json()
 
     const serialized = JSON.stringify(body)
     expect(serialized).not.toContain("10.0.0.5")
@@ -164,7 +172,7 @@ describe("GET /api/investments", () => {
     )
 
     const { GET } = await import("@/app/api/investments/route")
-    const response = await GET(new Request("https://chainmove.test/api/investments"))
+    const response = await GET(new Request("https://chainmove.test/api/investments"), noParams)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -205,7 +213,7 @@ describe("GET /api/pools", () => {
     ])
 
     const { GET } = await import("@/app/api/pools/route")
-    const response = await GET(new Request("https://chainmove.test/api/pools"))
+    const response = await GET(new Request("https://chainmove.test/api/pools"), noParams)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -242,7 +250,7 @@ describe("GET /api/pools", () => {
     ])
 
     const { GET } = await import("@/app/api/pools/route")
-    const body = await (await GET(new Request("https://chainmove.test/api/pools"))).json()
+    const body = await (await GET(new Request("https://chainmove.test/api/pools"), noParams)).json()
 
     // The page renders `userInvested?.amountMajor || 0`, so absent is safe.
     expect(body.pools[0].userInvested).toBeUndefined()
@@ -279,7 +287,7 @@ describe("GET /api/transactions/ledger", () => {
 
   it("serializes entries, pagination, and summary the ledger table reads", async () => {
     const { GET } = await import("@/app/api/transactions/ledger/route")
-    const response = await GET(new Request("https://chainmove.test/api/transactions/ledger?page=1&pageSize=20"))
+    const response = await GET(new Request("https://chainmove.test/api/transactions/ledger?page=1&pageSize=20"), noParams)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -296,7 +304,7 @@ describe("GET /api/transactions/ledger", () => {
 
   it("drops raw provider metadata", async () => {
     const { GET } = await import("@/app/api/transactions/ledger/route")
-    const body = await (await GET(new Request("https://chainmove.test/api/transactions/ledger"))).json()
+    const body = await (await GET(new Request("https://chainmove.test/api/transactions/ledger"), noParams)).json()
 
     expect(body.transactions[0].metadata).toBeUndefined()
     expect(JSON.stringify(body)).not.toContain("10.0.0.5")
@@ -307,7 +315,7 @@ describe("GET /api/transactions/ledger", () => {
     authenticateAs("admin")
 
     const { GET } = await import("@/app/api/transactions/ledger/route")
-    const body = await (await GET(new Request("https://chainmove.test/api/transactions/ledger"))).json()
+    const body = await (await GET(new Request("https://chainmove.test/api/transactions/ledger"), noParams)).json()
 
     expect(body.scope).toBe("global")
   })
@@ -338,7 +346,7 @@ describe("GET /api/admin/kyc-requests", () => {
     userCount.mockResolvedValue(1)
 
     const { GET } = await import("@/app/api/admin/kyc-requests/route")
-    const response = await GET(new Request("https://chainmove.test/api/admin/kyc-requests"))
+    const response = await GET(new Request("https://chainmove.test/api/admin/kyc-requests"), noParams)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -360,7 +368,7 @@ describe("GET /api/admin/kyc-requests", () => {
     authenticateAs("investor")
 
     const { GET } = await import("@/app/api/admin/kyc-requests/route")
-    const response = await GET(new Request("https://chainmove.test/api/admin/kyc-requests"))
+    const response = await GET(new Request("https://chainmove.test/api/admin/kyc-requests"), noParams)
 
     expect(response.status).toBe(403)
   })
