@@ -25,6 +25,8 @@
     "restore": "tsx scripts/backup/run-restore.ts",
     "restore:verify": "tsx scripts/backup/run-restore.ts --verify-only",
     "restore:token": "tsx scripts/backup/run-restore.ts --generate-token",
+    "repayment:check-schedules": "tsx scripts/check-repayment-schedules.ts",
+    "repayment:repair-schedules": "tsx scripts/check-repayment-schedules.ts --repair",
     "privacy:sweep": "tsx scripts/privacy-sweep.ts"
   },
   "dependencies": {
