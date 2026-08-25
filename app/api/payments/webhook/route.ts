@@ -2,6 +2,7 @@ import crypto from "crypto"
 import { NextResponse } from "next/server"
 
 import dbConnect from "@/lib/dbConnect"
+import { timingSafeEqualHex } from "@/lib/security/constant-time-compare"
 import { confirmDriverPayment, createAndConfirmDriverTransferPayment } from "@/lib/services/driver-contracts.service"
 import { getInvestorVirtualAccountByAccountNumber } from "@/lib/services/paystack-investor-dva.service"
 import { getDriverVirtualAccountByAccountNumber } from "@/lib/services/paystack-dva.service"
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
   const hash = crypto.createHmac("sha512", secretKey).update(body).digest("hex")
   const signature = request.headers.get("x-paystack-signature")
 
-  if (!signature || hash !== signature) {
+  if (!timingSafeEqualHex(signature, hash)) {
     return NextResponse.json({ message: "Invalid signature." }, { status: 401 })
   }
 
