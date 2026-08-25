@@ -1,6 +1,7 @@
 import mongoose, { type ClientSession } from "mongoose"
 
 import dbConnect from "@/lib/dbConnect"
+import { generateReferenceId } from "@/lib/ids/reference-id"
 import AuditLog from "@/models/AuditLog"
 import SettlementRecord, {
   CanonicalSettlementState,
@@ -48,8 +49,17 @@ export interface TransitionStateInput {
   session?: ClientSession
 }
 
+const MAX_SETTLEMENT_ID_COLLISION_RETRIES = 3
+
 function generateSettlementId(): string {
-  return `STL-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+  return generateReferenceId({ prefix: "STL", separator: "-" })
+}
+
+/** True when a Mongo duplicate-key error was raised by the unique `settlementId` index specifically, as opposed to the `providerReference`+`rail` index used for idempotent-replay detection. */
+function isSettlementIdCollision(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { code?: number; keyPattern?: Record<string, unknown> }
+  return candidate.code === 11000 && Boolean(candidate.keyPattern && "settlementId" in candidate.keyPattern)
 }
 
 async function runInSession<T>(
@@ -96,7 +106,6 @@ export async function initiateSettlement(input: InitiateSettlementInput): Promis
   const initialState = input.initialState || "initiated"
   const env = process.env.NODE_ENV || "development"
   const railConfig = getRailSettlementConfig(input.rail, env)
-  const settlementId = generateSettlementId()
 
   const safeActions = determineSafeActions(initialState, false)
 
@@ -111,57 +120,78 @@ export async function initiateSettlement(input: InitiateSettlementInput): Promis
   }
 
   const session = await mongoose.startSession()
-  session.startTransaction()
 
   try {
-    const [settlement] = await SettlementRecord.create(
-      [
-        {
-          settlementId,
-          rail: input.rail,
-          environment: env,
-          currentState: initialState,
-          providerReference: normalizedRef,
-          stellarHash: input.stellarHash,
-          ledgerJournalId: input.ledgerJournalId,
-          poolInvestmentId: input.poolInvestmentId,
-          driverPaymentId: input.driverPaymentId,
-          userTransactionId: input.userTransactionId,
-          userId: input.userId,
-          userType: input.userType,
-          paymentType: input.paymentType,
-          amount: input.amount,
-          currency: input.currency || "NGN",
-          finalityThreshold: railConfig.finalityThreshold,
-          timeline: [initialTimelineEntry],
-          isStuck: false,
-        },
-      ],
-      { session },
-    )
+    for (let attempt = 1; attempt <= MAX_SETTLEMENT_ID_COLLISION_RETRIES; attempt++) {
+      const settlementId = generateSettlementId()
+      session.startTransaction()
 
-    if (["initiated", "provider-pending", "observed", "provisionally_credited"].includes(initialState)) {
-      if (input.paymentType === "wallet_funding") {
-        await User.findByIdAndUpdate(
-          input.userId,
-          { $inc: { pendingBalance: input.amount } },
+      try {
+        const [settlement] = await SettlementRecord.create(
+          [
+            {
+              settlementId,
+              rail: input.rail,
+              environment: env,
+              currentState: initialState,
+              providerReference: normalizedRef,
+              stellarHash: input.stellarHash,
+              ledgerJournalId: input.ledgerJournalId,
+              poolInvestmentId: input.poolInvestmentId,
+              driverPaymentId: input.driverPaymentId,
+              userTransactionId: input.userTransactionId,
+              userId: input.userId,
+              userType: input.userType,
+              paymentType: input.paymentType,
+              amount: input.amount,
+              currency: input.currency || "NGN",
+              finalityThreshold: railConfig.finalityThreshold,
+              timeline: [initialTimelineEntry],
+              isStuck: false,
+            },
+          ],
           { session },
         )
+
+        if (["initiated", "provider-pending", "observed", "provisionally_credited"].includes(initialState)) {
+          if (input.paymentType === "wallet_funding") {
+            await User.findByIdAndUpdate(
+              input.userId,
+              { $inc: { pendingBalance: input.amount } },
+              { session },
+            )
+          }
+        }
+
+        await session.commitTransaction()
+        return { settlement, alreadyExists: false }
+      } catch (err: any) {
+        await session.abortTransaction().catch(() => undefined)
+
+        if (isSettlementIdCollision(err)) {
+          if (attempt === MAX_SETTLEMENT_ID_COLLISION_RETRIES) {
+            throw new Error(
+              `Failed to generate a unique settlement id after ${MAX_SETTLEMENT_ID_COLLISION_RETRIES} attempts.`,
+            )
+          }
+          console.warn("SETTLEMENT_ID_COLLISION_RETRY", { attempt, settlementId, rail: input.rail })
+          continue
+        }
+
+        if (err.code === 11000) {
+          const found = await SettlementRecord.findOne({
+            providerReference: normalizedRef,
+            rail: input.rail,
+          })
+          if (found) return { settlement: found, alreadyExists: true }
+        }
+        throw err
       }
     }
 
-    await session.commitTransaction()
-    return { settlement, alreadyExists: false }
-  } catch (err: any) {
-    await session.abortTransaction().catch(() => undefined)
-    if (err.code === 11000) {
-      const found = await SettlementRecord.findOne({
-        providerReference: normalizedRef,
-        rail: input.rail,
-      })
-      if (found) return { settlement: found, alreadyExists: true }
-    }
-    throw err
+    throw new Error(
+      `Failed to generate a unique settlement id after ${MAX_SETTLEMENT_ID_COLLISION_RETRIES} attempts.`,
+    )
   } finally {
     session.endSession()
   }
