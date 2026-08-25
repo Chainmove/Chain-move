@@ -153,6 +153,7 @@ async function applyEntry(
 
   if (entry.deletionStrategy === "anonymize" || entry.deletionStrategy === "pseudonymize") {
     const update: Record<string, unknown> = {}
+    const unset: Record<string, unknown> = {}
     for (const field of entry.personalFields) {
       if (entry.model === "User" && (field === "name" || field === "fullName")) {
         update[field] = fullAnonymizeFor(userId)
@@ -163,12 +164,19 @@ async function applyEntry(
         // useful tombstone value for a password hash.
         continue
       }
+      if (entry.model === "User" && field === "notifications") {
+        // Deprecated embedded array. Notifications live in their own
+        // collection, which the "Notifications" entry hard-deletes; a
+        // not-yet-migrated document may still hold notification text here, so
+        // drop the field outright instead of leaving an empty array behind.
+        unset[field] = ""
+        continue
+      }
       update[field] = pseudonymFor(userId, field)
     }
     if (entry.model === "User") {
       update.kycDocuments = []
       update.kycRejectionReason = null
-      update.notifications = []
       update.password = null
       update.privyUserId = null
       update.anonymizedAt = new Date()
@@ -180,7 +188,10 @@ async function applyEntry(
         anonymizedAt: new Date().toISOString(),
       }
     }
-    const result = await model.updateMany(filter, { $set: update })
+    const result = await model.updateMany(
+      filter,
+      Object.keys(unset).length > 0 ? { $set: update, $unset: unset } : { $set: update },
+    )
     return { affectedCount: result.modifiedCount || 0 }
   }
 
