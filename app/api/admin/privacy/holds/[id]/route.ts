@@ -15,19 +15,19 @@ const releaseSchema = z.object({
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+): Promise<void | NextResponse> {
   try {
     const { id } = await params
     const authContext = await requireAuthenticatedUser(request, ["admin"])
     if ("response" in authContext) return authContext.response
 
-    let parsed: { data: z.infer<typeof releaseSchema> } | { response: NextResponse }
+    let parsed: z.infer<typeof releaseSchema>
     try {
       const text = await request.text()
       if (!text || text.trim().length === 0) {
-        parsed = { data: { reason: "Released by admin" } }
+        parsed = { reason: "Released by admin" }
       } else {
-        parsed = { data: releaseSchema.parse(JSON.parse(text)) }
+        parsed = releaseSchema.parse(JSON.parse(text))
       }
     } catch (error) {
       return NextResponse.json(
@@ -38,11 +38,9 @@ export async function DELETE(
         { status: 400 },
       )
     }
-    if ("response" in parsed) return parsed.response
-
     const hold = await releaseLegalHold({
       id,
-      reason: parsed.data.reason,
+      reason: parsed.reason,
       actor: { id: authContext.user._id.toString(), role: "admin" },
     })
 
