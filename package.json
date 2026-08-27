@@ -125,6 +125,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/use-sync-external-store": "^1.5.0",
+    "@types/uuid": "^10.0.0",
     "eslint": "^9.39.2",
     "eslint-config-next": "^16.2.3",
     "jsdom": "^25.0.1",
