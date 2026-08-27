@@ -45,7 +45,7 @@ const createHoldSchema = z.object({
   reference: z.string().trim().max(200).optional(),
 })
 
-export async function GET(request: Request) {
+export async function GET(request: Request): Promise<NextResponse> {
   try {
     const authContext = await requireAuthenticatedUser(request, ["admin"])
     if ("response" in authContext) return authContext.response
@@ -63,15 +63,15 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<NextResponse> {
   try {
     const authContext = await requireAuthenticatedUser(request, ["admin"])
     if ("response" in authContext) return authContext.response
 
-    let parsed: { data: z.infer<typeof createHoldSchema> } | { response: NextResponse }
+    let parsed: z.infer<typeof createHoldSchema>
     try {
       const json = await request.json()
-      parsed = { data: createHoldSchema.parse(json) }
+      parsed = createHoldSchema.parse(json)
     } catch (error) {
       return NextResponse.json(
         {
@@ -81,9 +81,7 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
-    if ("response" in parsed) return parsed.response
-
-    const data = parsed.data
+    const data = parsed
     if (!data.userId && !(data.resourceType && data.resourceId)) {
       return NextResponse.json(
         { message: "Either userId or (resourceType, resourceId) is required." },
