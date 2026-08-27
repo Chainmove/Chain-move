@@ -41,6 +41,9 @@ export interface IHirePurchaseContract extends Document {
   startDate: Date
   status: HirePurchaseContractStatus
   version: number
+  consentAcceptanceId: string
+  acceptedDocumentSetHash: string
+  acceptedDocumentVersionIds: Schema.Types.ObjectId[]
   timeline: IHirePurchaseContractTransition[]
   totalPaidNgn: number
   nextDueDate: Date | null
@@ -147,6 +150,20 @@ const HirePurchaseContractSchema: Schema = new Schema(
       type: Number,
       default: 0,
     },
+    consentAcceptanceId: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true,
+    },
+    acceptedDocumentSetHash: {
+      type: String,
+      required: false,
+      trim: true,
+      lowercase: true,
+      match: /^[a-f0-9]{64}$/,
+    },
+    acceptedDocumentVersionIds: [{ type: Schema.Types.ObjectId, ref: "LegalDocumentVersion" }],
     timeline: {
       type: [HirePurchaseContractTransitionSchema],
       default: [],
@@ -167,6 +184,7 @@ const HirePurchaseContractSchema: Schema = new Schema(
 HirePurchaseContractSchema.index({ driverUserId: 1, status: 1, createdAt: -1 })
 HirePurchaseContractSchema.index({ poolId: 1, status: 1 })
 HirePurchaseContractSchema.index({ vehicleId: 1 }, { sparse: true })
+HirePurchaseContractSchema.index({ consentAcceptanceId: 1 }, { sparse: true })
 
 export default (mongoose.models.HirePurchaseContract ||
   mongoose.model<IHirePurchaseContract>("HirePurchaseContract", HirePurchaseContractSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

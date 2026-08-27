@@ -64,6 +64,14 @@ export const TransactionStatusSchema = z.enum(["Pending", "Completed", "Failed"]
 export const ReconciliationStatusSchema = z.enum(["reconciled", "pending", "failed", "duplicate"])
 export const PoolStatusSchema = z.enum(["OPEN", "FUNDED", "CLOSED"])
 export const UserRoleSchema = z.enum(["driver", "investor", "admin"])
+export const LegalDocumentKeySchema = z.enum([
+  "risk_disclosure",
+  "fee_schedule",
+  "privacy_notice",
+  "hire_purchase_terms",
+  "investment_terms",
+])
+export const ConsentIntentTypeSchema = z.enum(["pool_investment", "hire_purchase_contract"])
 
 /* -------------------------------------------------------------------------- */
 /* Wallet                                                                      */
@@ -147,6 +155,8 @@ export const PoolInvestmentRequestSchema = z
   .object({
     amountNgn: z.coerce.number().positive().max(100_000_000).describe("Contribution in NGN major units."),
     txRef: z.string().trim().max(128).optional().describe("Client idempotency reference."),
+    consentAcceptanceId: z.string().trim().min(1).max(120).describe("Single-use acceptance bound to this pool investment intent."),
+    jurisdiction: z.string().trim().min(2).max(8).default("NG").describe("Jurisdiction used for the accepted document set."),
   })
   .strict()
 
@@ -159,6 +169,8 @@ export const PoolInvestmentResponseSchema = z.object({
     ownershipUnits: z.number().int().min(0),
     ownershipBps: z.number().int().min(0),
     txRef: z.string(),
+    consentAcceptanceId: z.string(),
+    acceptedDocumentSetHash: z.string(),
     poolStatus: PoolStatusSchema,
     currentRaised: MoneySchema,
     targetAmount: MoneySchema,
@@ -186,6 +198,106 @@ export const InvestmentSchema = z.object({
 export const InvestmentListResponseSchema = z.object({
   success: SuccessFlagSchema,
   investments: z.array(InvestmentSchema),
+})
+
+/* -------------------------------------------------------------------------- */
+/* Consent                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export const ConsentIntentSchema = z.object({
+  type: ConsentIntentTypeSchema,
+  id: z.string().trim().min(1).max(120),
+  terms: z.record(z.unknown()).describe("Client-visible transaction terms hashed into the consent challenge."),
+})
+
+export const ConsentChallengeCreateRequestSchema = z
+  .object({
+    locale: z.string().trim().min(2).max(16).default("en-NG"),
+    jurisdiction: z.string().trim().min(2).max(8).default("NG"),
+    intent: ConsentIntentSchema,
+  })
+  .strict()
+
+export const ConsentDocumentSummarySchema = z.object({
+  id: ObjectIdSchema,
+  documentKey: LegalDocumentKeySchema,
+  version: z.string(),
+  locale: z.string(),
+  jurisdiction: z.string(),
+  title: z.string(),
+  contentType: z.string(),
+  sha256: z.string(),
+  byteLength: z.number().int().positive(),
+})
+
+export const ConsentChallengeCreateResponseSchema = z.object({
+  success: SuccessFlagSchema,
+  challenge: z.object({
+    challengeId: z.string(),
+    challengeHash: z.string(),
+    expiresAt: z.date().or(IsoDateTimeSchema),
+    documentSetHash: z.string(),
+    documents: z.array(ConsentDocumentSummarySchema),
+  }),
+})
+
+export const ConsentChallengeParamsSchema = z.object({
+  challengeId: z.string().trim().min(1).max(160),
+})
+
+export const ConsentChallengeAcceptRequestSchema = z
+  .object({
+    intent: ConsentIntentSchema,
+    sessionEvidence: z.record(z.unknown()).optional(),
+    walletEvidence: z.record(z.unknown()).optional(),
+    renderManifest: z
+      .object({
+        renderer: z.string().trim().min(1).max(120),
+        renderedAt: z.coerce.date().optional(),
+        accessibilityMode: z.string().trim().max(80).optional(),
+        viewport: z.record(z.unknown()).optional(),
+        componentHashes: z.record(z.string()).optional(),
+      })
+      .strict(),
+  })
+  .strict()
+
+export const ConsentChallengeAcceptResponseSchema = z.object({
+  success: SuccessFlagSchema,
+  acceptance: z.object({
+    acceptanceId: z.string(),
+    challengeId: z.string(),
+    documentSetHash: z.string(),
+    consentHash: z.string(),
+    acceptedAt: z.date().or(IsoDateTimeSchema),
+  }),
+})
+
+export const ConsentAcceptanceParamsSchema = z.object({
+  acceptanceId: z.string().trim().min(1).max(160),
+})
+
+export const ConsentEvidenceExportResponseSchema = z.object({
+  success: SuccessFlagSchema,
+  evidence: z.object({
+    acceptanceId: z.string(),
+    challengeId: z.string(),
+    role: UserRoleSchema,
+    locale: z.string(),
+    jurisdiction: z.string(),
+    intent: z.object({
+      type: ConsentIntentTypeSchema,
+      id: z.string(),
+      summaryHash: z.string(),
+    }),
+    documentSetHash: z.string(),
+    consentHash: z.string(),
+    acceptedAt: z.date().or(IsoDateTimeSchema),
+    withdrawnAt: z.date().or(IsoDateTimeSchema).nullable(),
+    grandfathered: z.boolean(),
+    renderManifest: z.record(z.unknown()),
+    documents: z.array(z.record(z.unknown())),
+  }),
 })
 
 /* -------------------------------------------------------------------------- */
@@ -485,14 +597,14 @@ export const apiContracts: ApiContract[] = [
     summary: "Contribute to an investment pool from the internal wallet.",
     description:
       "Debits the caller's internal NGN wallet and records ownership units. " +
-      "Retries are safe when the same `txRef` is supplied.",
+      "The supplied consent acceptance must be bound to this user, pool, amount, jurisdiction, and idempotency intent.",
     auth: "authenticated",
     params: PoolInvestParamsSchema,
     body: PoolInvestmentRequestSchema,
     response: PoolInvestmentResponseSchema,
     successStatus: 201,
     errors: [400, 401, 403, 404, 409, 500, 503],
-    requestExample: { amountNgn: 50000, txRef: "client-generated-ref-001" },
+    requestExample: { amountNgn: 50000, txRef: "client-generated-ref-001", consentAcceptanceId: "consent_acc_01" },
   },
   {
     operationId: "listInvestments",
@@ -504,6 +616,47 @@ export const apiContracts: ApiContract[] = [
     query: InvestmentListQuerySchema,
     response: InvestmentListResponseSchema,
     errors: [...BASE_ERRORS, 404],
+  },
+  {
+    operationId: "createConsentChallenge",
+    method: "POST",
+    path: "/api/consent/challenges",
+    tag: "consent",
+    summary: "Create a transaction-bound financial consent challenge.",
+    auth: "authenticated",
+    body: ConsentChallengeCreateRequestSchema,
+    response: ConsentChallengeCreateResponseSchema,
+    successStatus: 201,
+    errors: [...BASE_ERRORS, 404, 409],
+    requestExample: {
+      jurisdiction: "NG",
+      locale: "en-NG",
+      intent: { type: "pool_investment", id: "665f1a2b3c4d5e6f70819203", terms: { amountNgn: 50000 } },
+    },
+  },
+  {
+    operationId: "acceptConsentChallenge",
+    method: "POST",
+    path: "/api/consent/challenges/{challengeId}/accept",
+    tag: "consent",
+    summary: "Affirm a consent challenge after rendering the exact document set.",
+    auth: "authenticated",
+    params: ConsentChallengeParamsSchema,
+    body: ConsentChallengeAcceptRequestSchema,
+    response: ConsentChallengeAcceptResponseSchema,
+    successStatus: 201,
+    errors: [...BASE_ERRORS, 409],
+  },
+  {
+    operationId: "exportConsentEvidence",
+    method: "GET",
+    path: "/api/consent/acceptances/{acceptanceId}/export",
+    tag: "consent",
+    summary: "Export hash-verifiable consent evidence for an accepted financial action.",
+    auth: "authenticated",
+    params: ConsentAcceptanceParamsSchema,
+    response: ConsentEvidenceExportResponseSchema,
+    errors: [...BASE_ERRORS, 404, 409],
   },
   {
     operationId: "initializePayment",
@@ -606,6 +759,8 @@ export type PoolCreateRequest = z.infer<typeof PoolCreateRequestSchema>
 export type PoolInvestmentRequest = z.infer<typeof PoolInvestmentRequestSchema>
 export type PoolInvestmentResponse = z.infer<typeof PoolInvestmentResponseSchema>
 export type InvestmentListResponse = z.infer<typeof InvestmentListResponseSchema>
+export type ConsentChallengeCreateRequest = z.infer<typeof ConsentChallengeCreateRequestSchema>
+export type ConsentChallengeCreateResponse = z.infer<typeof ConsentChallengeCreateResponseSchema>
 export type PaymentInitializeRequest = z.infer<typeof PaymentInitializeRequestSchema>
 export type PaymentInitializeResponse = z.infer<typeof PaymentInitializeResponseSchema>
 export type DriverVirtualAccountResponse = z.infer<typeof DriverVirtualAccountResponseSchema>

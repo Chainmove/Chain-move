@@ -57,6 +57,9 @@ export const POST = defineRoute({
         userId: String(user._id),
         amountNgn: body.amountNgn,
         txRef: body.txRef,
+        consentAcceptanceId: body.consentAcceptanceId,
+        jurisdiction: body.jurisdiction,
+        role: (user.role as "driver" | "investor" | "admin") || "investor",
       })
 
       return {
@@ -68,6 +71,8 @@ export const POST = defineRoute({
           ownershipUnits: investment.ownershipUnits,
           ownershipBps: investment.ownershipBps,
           txRef: investment.txRef,
+          consentAcceptanceId: investment.consentAcceptanceId,
+          acceptedDocumentSetHash: investment.acceptedDocumentSetHash,
           poolStatus: investment.poolStatus as "OPEN" | "FUNDED" | "CLOSED",
           currentRaised: money(investment.currentRaisedNgn),
           targetAmount: money(investment.targetAmountNgn),
