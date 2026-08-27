@@ -181,6 +181,23 @@ export async function POST(request: Request) {
       return finalizeAuthenticatedResponse(response, authContext)
     }
 
+    const vehicleValidation = validateKycFile(fileBuffer, contentType, filename)
+    if (!vehicleValidation.valid) {
+      await logAuditEvent({
+        actor: authContext.user,
+        action: "vehicle.image.upload.rejected",
+        targetType: "user",
+        targetId: authContext.user._id?.toString(),
+        status: "failure",
+        ipAddress: getClientIpAddress(request),
+        metadata: { filename, errors: vehicleValidation.errors },
+      })
+      return NextResponse.json(
+        { message: "File validation failed.", errors: vehicleValidation.errors },
+        { status: 400 },
+      )
+    }
+
     const uniqueFilename = `vehicles/${authContext.user._id.toString()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${filename}`
     const blob = await put(uniqueFilename, fileBuffer, {
       access: "public",
