@@ -162,7 +162,14 @@ export default function AdminLoanManagementPage() {
       
       // Send email notification
       if (driverInfo.email) {
-        await sendEmailNotification(driverInfo.email, notificationTitle, notificationMessage)
+        await sendEmailNotification(
+          userId,
+          actionType === "approve" ? "loan.approved" : "loan.rejected",
+          {
+            amountLabel: `$${selectedLoan.requestedAmount.toLocaleString()}`,
+            ...(actionType === "reject" && adminNotes ? { reason: adminNotes } : {}),
+          },
+        )
       } else {
         console.error('Driver email not found:', driverInfo)
       }
@@ -202,29 +209,22 @@ export default function AdminLoanManagementPage() {
   }
 }
 
-  // Send email notification
-  const sendEmailNotification = async (email: any, subject: any, message: any) => {
+  // Send email notification using an approved, server-rendered template
+  const sendEmailNotification = async (
+    userId: any,
+    templateId: "loan.approved" | "loan.rejected",
+    variables: Record<string, string>,
+  ) => {
     try {
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
-          <h2 style="color: #E57700; margin-bottom: 20px;">${subject}</h2>
-          <p style="margin-bottom: 15px;">${message}</p>
-          <p style="margin-bottom: 15px;">Please log in to your dashboard to view more details.</p>
-          <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
-            <p style="font-size: 12px; color: #666;">This is an automated message from Chain Move. Please do not reply to this email.</p>
-          </div>
-        </div>
-      `
-
       const response = await fetch('/api/send-email', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          to: email,
-          subject: subject,
-          html: htmlContent,
+          userId,
+          templateId,
+          variables,
         }),
       })
 
