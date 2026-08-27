@@ -9,6 +9,9 @@ export interface IPoolInvestment extends Document {
   ownershipUnits: number
   ownershipBps: number
   txRef: string
+  consentAcceptanceId: string
+  acceptedDocumentSetHash: string
+  acceptedDocumentVersionIds: Schema.Types.ObjectId[]
   status: PoolInvestmentStatus
   createdAt: Date
   updatedAt: Date
@@ -50,6 +53,20 @@ const PoolInvestmentSchema: Schema = new Schema(
       index: true,
       trim: true,
     },
+    consentAcceptanceId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
+    acceptedDocumentSetHash: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      match: /^[a-f0-9]{64}$/,
+    },
+    acceptedDocumentVersionIds: [{ type: Schema.Types.ObjectId, ref: "LegalDocumentVersion", required: true }],
     status: {
       type: String,
       enum: ["PENDING", "CONFIRMED", "FAILED"],
@@ -61,6 +78,7 @@ const PoolInvestmentSchema: Schema = new Schema(
 )
 
 PoolInvestmentSchema.index({ poolId: 1, userId: 1, createdAt: -1 })
+PoolInvestmentSchema.index({ consentAcceptanceId: 1, userId: 1 })
 
 export default (mongoose.models.PoolInvestment ||
   mongoose.model<IPoolInvestment>("PoolInvestment", PoolInvestmentSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

@@ -138,12 +138,22 @@ describe("webhook contract", () => {
 describe("investment contract", () => {
   it("requires an amount and accepts an idempotency reference", () => {
     expect(PoolInvestmentRequestSchema.safeParse({}).success).toBe(false)
-    expect(PoolInvestmentRequestSchema.safeParse({ amountNgn: 5000, txRef: "ref-1" }).success).toBe(true)
+    expect(
+      PoolInvestmentRequestSchema.safeParse({
+        amountNgn: 5000,
+        txRef: "ref-1",
+        consentAcceptanceId: "consent_acc_1",
+      }).success,
+    ).toBe(true)
   })
 
   it("rejects undeclared request fields", () => {
     expect(
-      PoolInvestmentRequestSchema.safeParse({ amountNgn: 5000, ownershipBps: 9999 }).success,
+      PoolInvestmentRequestSchema.safeParse({
+        amountNgn: 5000,
+        consentAcceptanceId: "consent_acc_1",
+        ownershipBps: 9999,
+      }).success,
     ).toBe(false)
   })
 
@@ -157,6 +167,8 @@ describe("investment contract", () => {
         ownershipUnits: 10,
         ownershipBps: 200,
         txRef: "ref-1",
+        consentAcceptanceId: "consent_acc_1",
+        acceptedDocumentSetHash: "a".repeat(64),
         poolStatus: "OPEN",
         currentRaised: money(50000),
         targetAmount: money(2500000),
@@ -182,6 +194,8 @@ describe("investment contract", () => {
         ownershipUnits: 10,
         ownershipBps: 200,
         txRef: "ref-1",
+        consentAcceptanceId: "consent_acc_1",
+        acceptedDocumentSetHash: "a".repeat(64),
         poolStatus: "OPEN",
         currentRaised: money(50000),
         targetAmount: money(2500000),

@@ -1,4 +1,9 @@
 import mongoose from "mongoose"
+import {
+  type ConsentRole,
+  REQUIRED_INVESTMENT_DOCUMENTS,
+  requireAcceptedConsent,
+} from "@/lib/consent/financial-consent"
 import InvestmentPool from "@/models/InvestmentPool"
 import PoolInvestment from "@/models/PoolInvestment"
 import Transaction from "@/models/Transaction"
@@ -16,6 +21,9 @@ interface InvestInPoolInput {
   userId: string
   amountNgn: number
   txRef?: string
+  consentAcceptanceId?: string
+  jurisdiction?: string
+  role?: ConsentRole
 }
 
 export interface InvestInPoolResult {
@@ -25,6 +33,8 @@ export interface InvestInPoolResult {
   ownershipUnits: number
   ownershipBps: number
   txRef: string
+  consentAcceptanceId: string
+  acceptedDocumentSetHash: string
   poolStatus: "OPEN" | "FUNDED" | "CLOSED"
   currentRaisedNgn: number
   targetAmountNgn: number
@@ -65,7 +75,15 @@ export function calculateOwnership(amountNgn: number, targetAmountNgn: number): 
   }
 }
 
-export async function investInPool({ poolId, userId, amountNgn, txRef }: InvestInPoolInput): Promise<InvestInPoolResult> {
+export async function investInPool({
+  poolId,
+  userId,
+  amountNgn,
+  txRef,
+  consentAcceptanceId,
+  jurisdiction = "NG",
+  role = "investor",
+}: InvestInPoolInput): Promise<InvestInPoolResult> {
   if (!mongoose.Types.ObjectId.isValid(poolId)) {
     throw new Error("Invalid pool ID.")
   }
@@ -115,6 +133,26 @@ export async function investInPool({ poolId, userId, amountNgn, txRef }: InvestI
       }
 
       const { ownershipUnits, ownershipBps } = calculateOwnership(amountNgn, pool.targetAmountNgn)
+      const effectiveTxRef = generatedTxRef
+      const consent = await requireAcceptedConsent({
+        userId,
+        role,
+        jurisdiction,
+        acceptanceId: consentAcceptanceId,
+        requiredDocuments: REQUIRED_INVESTMENT_DOCUMENTS,
+        intent: {
+          type: "pool_investment",
+          id: pool._id.toString(),
+          terms: {
+            amountNgn,
+            txRef: effectiveTxRef,
+            poolId: pool._id.toString(),
+            targetAmountNgn: pool.targetAmountNgn,
+            jurisdiction,
+          },
+        },
+        session,
+      })
 
       const existingInvestment = await PoolInvestment.exists({
         poolId: pool._id,
@@ -130,7 +168,10 @@ export async function investInPool({ poolId, userId, amountNgn, txRef }: InvestI
             amountNgn,
             ownershipUnits,
             ownershipBps,
-            txRef: generatedTxRef,
+            txRef: effectiveTxRef,
+            consentAcceptanceId: consent.acceptanceId,
+            acceptedDocumentSetHash: consent.documentSetHash,
+            acceptedDocumentVersionIds: consent.documentVersionIds,
             status: "CONFIRMED",
           },
         ],
@@ -166,6 +207,8 @@ export async function investInPool({ poolId, userId, amountNgn, txRef }: InvestI
             metadata: {
               ownershipUnits,
               ownershipBps,
+              consentAcceptanceId: consent.acceptanceId,
+              acceptedDocumentSetHash: consent.documentSetHash,
             },
           },
         ],
@@ -181,6 +224,8 @@ export async function investInPool({ poolId, userId, amountNgn, txRef }: InvestI
         ownershipUnits,
         ownershipBps,
         txRef: generatedTxRef,
+        consentAcceptanceId: consent.acceptanceId,
+        acceptedDocumentSetHash: consent.documentSetHash,
         poolStatus: pool.status,
         currentRaisedNgn: pool.currentRaisedNgn,
         targetAmountNgn: pool.targetAmountNgn,
