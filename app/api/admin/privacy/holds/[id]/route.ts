@@ -15,7 +15,7 @@ const releaseSchema = z.object({
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
-) {
+): Promise<void | NextResponse> {
   try {
     const { id } = await params
     const authContext = await requireAuthenticatedUser(request, ["admin"])
