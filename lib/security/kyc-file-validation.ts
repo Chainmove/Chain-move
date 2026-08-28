@@ -11,6 +11,14 @@ export const KYC_ALLOWED_MIME_TYPES = new Set([
 
 export const KYC_ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".pdf"])
 
+// Bounds shared by every caller (KYC documents and vehicle images) that decode
+// approved image formats. These limits guard against decompression-bomb style
+// inputs where a tiny file declares an enormous pixel grid.
+export const MAX_IMAGE_DIMENSION_PX = 12000
+export const MAX_IMAGE_PIXELS = 50_000_000
+
+const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+
 const SIGNATURES: { mime: string; extension: string[]; bytes: Buffer; offset: number }[] = [
   {
     mime: "image/jpeg",
@@ -68,6 +76,95 @@ function detectExtension(buffer: Buffer): string | null {
   return null
 }
 
+type ImageDimensions = { width: number; height: number }
+
+function getJpegDimensions(buffer: Buffer): ImageDimensions | null {
+  if (buffer.length < 4 || buffer[0] !== 0xff || buffer[1] !== 0xd8) return null
+
+  let offset = 2
+  while (offset + 4 <= buffer.length) {
+    if (buffer[offset] !== 0xff) return null
+    const marker = buffer[offset + 1]
+
+    // Markers without a length-prefixed payload.
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+      offset += 2
+      continue
+    }
+
+    const length = buffer.readUInt16BE(offset + 2)
+    const isSOF =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf)
+
+    if (isSOF) {
+      if (offset + 9 > buffer.length) return null
+      const height = buffer.readUInt16BE(offset + 5)
+      const width = buffer.readUInt16BE(offset + 7)
+      if (!width || !height) return null
+      return { width, height }
+    }
+
+    if (marker === 0xda || length < 2) return null
+    offset += 2 + length
+  }
+  return null
+}
+
+function getPngDimensions(buffer: Buffer): ImageDimensions | null {
+  if (buffer.length < 24) return null
+  const width = buffer.readUInt32BE(16)
+  const height = buffer.readUInt32BE(20)
+  if (!width || !height) return null
+  return { width, height }
+}
+
+function getWebpDimensions(buffer: Buffer): ImageDimensions | null {
+  if (buffer.length < 20) return null
+  const chunkFourCC = buffer.subarray(12, 16).toString("ascii")
+
+  if (chunkFourCC === "VP8 ") {
+    if (buffer.length < 30) return null
+    if (!(buffer[23] === 0x9d && buffer[24] === 0x01 && buffer[25] === 0x2a)) return null
+    const width = buffer.readUInt16LE(26) & 0x3fff
+    const height = buffer.readUInt16LE(28) & 0x3fff
+    if (!width || !height) return null
+    return { width, height }
+  }
+
+  if (chunkFourCC === "VP8L") {
+    if (buffer.length < 25 || buffer[20] !== 0x2f) return null
+    const bits = buffer.readUInt32LE(21)
+    const width = (bits & 0x3fff) + 1
+    const height = ((bits >> 14) & 0x3fff) + 1
+    return { width, height }
+  }
+
+  if (chunkFourCC === "VP8X") {
+    if (buffer.length < 30) return null
+    const width = (buffer[24] | (buffer[25] << 8) | (buffer[26] << 16)) + 1
+    const height = (buffer[27] | (buffer[28] << 8) | (buffer[29] << 16)) + 1
+    return { width, height }
+  }
+
+  return null
+}
+
+function getImageDimensions(buffer: Buffer, mimeType: string): ImageDimensions | null {
+  switch (mimeType) {
+    case "image/jpeg":
+      return getJpegDimensions(buffer)
+    case "image/png":
+      return getPngDimensions(buffer)
+    case "image/webp":
+      return getWebpDimensions(buffer)
+    default:
+      return null
+  }
+}
+
 export type FileValidationResult = {
   valid: boolean
   errors: string[]
@@ -118,6 +215,21 @@ export function validateKycFile(
     errors.push(
       `Declared extension "${declaredExt}" does not match detected type "${detectedExtension}".`,
     )
+  }
+
+  if (detectedMimeType && IMAGE_MIME_TYPES.has(detectedMimeType)) {
+    const dimensions = getImageDimensions(buffer, detectedMimeType)
+    if (!dimensions) {
+      errors.push("Unable to determine image dimensions. File may be malformed, truncated, or corrupted.")
+    } else if (
+      dimensions.width > MAX_IMAGE_DIMENSION_PX ||
+      dimensions.height > MAX_IMAGE_DIMENSION_PX ||
+      dimensions.width * dimensions.height > MAX_IMAGE_PIXELS
+    ) {
+      errors.push(
+        `Image dimensions ${dimensions.width}x${dimensions.height} exceed the maximum allowed ${MAX_IMAGE_DIMENSION_PX}px per side or ${MAX_IMAGE_PIXELS} total pixels.`,
+      )
+    }
   }
 
   return {
