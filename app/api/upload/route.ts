@@ -19,7 +19,14 @@ import {
   getClientIpAddress,
   rateLimitExceededResponse,
 } from "@/lib/security/rate-limit"
+import {
+  computeChecksumSha256,
+  FLEET_DOCUMENT_TYPES,
+  isPrivateFleetDocumentBlobUrl,
+} from "@/lib/security/fleet-documents"
 import KycDocument from "@/models/KycDocument"
+import FleetDocumentUpload from "@/models/FleetDocumentUpload"
+import Vehicle from "@/models/Vehicle"
 
 const VEHICLE_ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
@@ -27,6 +34,8 @@ const querySchema = z.object({
   filename: z.string().trim().min(1).max(200),
   scope: z.enum(["kyc", "vehicle"]),
   documentType: z.enum(["identity", "proof_of_address", "bvn", "nin", "other"]).optional(),
+  fleetDocumentType: z.enum(FLEET_DOCUMENT_TYPES).optional(),
+  vehicleId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
 })
 
 function sanitizeFilename(filename: string) {
@@ -176,6 +185,76 @@ export async function POST(request: Request) {
         documentId: kycDoc._id.toString(),
         documentRef: encryptedRef,
         status: kycDoc.status,
+      })
+
+      return finalizeAuthenticatedResponse(response, authContext)
+    }
+
+    if (query.data.fleetDocumentType) {
+      const vehicleId = query.data.vehicleId
+      if (!vehicleId) {
+        return NextResponse.json(
+          { message: "vehicleId is required for fleet document uploads." },
+          { status: 400 },
+        )
+      }
+
+      await dbConnect()
+
+      const vehicleExists = await Vehicle.exists({ _id: vehicleId })
+      if (!vehicleExists) {
+        return NextResponse.json({ message: "Vehicle not found." }, { status: 404 })
+      }
+
+      const fleetDocumentType = query.data.fleetDocumentType
+      const checksumSha256 = computeChecksumSha256(fileBuffer)
+      const storageKey = `fleet-documents/${vehicleId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${filename}`
+
+      const blob = await put(storageKey, fileBuffer, {
+        access: "private",
+        addRandomSuffix: false,
+        contentType,
+      })
+
+      if (!isPrivateFleetDocumentBlobUrl(blob.url)) {
+        throw new Error("Fleet document uploads require a private Blob store.")
+      }
+
+      const retentionExpiresAt = computeRetentionExpiry(new Date())
+
+      const fleetDocument = await FleetDocumentUpload.create({
+        vehicleId,
+        uploadedBy: authContext.user._id,
+        documentType: fleetDocumentType,
+        status: "active",
+        storageKey,
+        blobUrl: blob.url,
+        originalFilename: filename,
+        contentType,
+        fileSize: fileBuffer.length,
+        checksumSha256,
+        retentionExpiresAt,
+        accessCount: 0,
+      })
+
+      await logAuditEvent({
+        actor: authContext.user,
+        action: "fleet.document.upload",
+        targetType: "fleet_document",
+        targetId: fleetDocument._id.toString(),
+        metadata: {
+          vehicleId,
+          documentType: fleetDocumentType,
+          filename,
+          contentType,
+          fileSize: fileBuffer.length,
+          checksumSha256,
+        },
+      })
+
+      const response = NextResponse.json({
+        success: true,
+        documentId: fleetDocument._id.toString(),
       })
 
       return finalizeAuthenticatedResponse(response, authContext)
