@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -31,54 +31,36 @@ interface WithdrawalSystemProps {
   pendingWithdrawals: number
 }
 
+/** Canonical money envelope from the API. See docs/api-conventions.md. */
+interface Money {
+  currency: string
+  amountMinor: number
+  amountMajor: number
+}
+
 interface Transaction {
   id: string
-  type: "withdrawal" | "earning"
-  amount: number
-  method: string
-  status: "completed" | "pending" | "failed"
+  type: string
+  direction: "credit" | "debit"
+  amount: Money
+  method: string | null
+  status: string
   date: string
   description: string
 }
 
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    type: "earning",
-    amount: 450,
-    method: "Investor Funding",
-    status: "completed",
-    date: "2025-01-20",
-    description: "Weekly earnings from vehicle usage",
-  },
-  {
-    id: "2",
-    type: "withdrawal",
-    amount: 200,
-    method: "Bank Transfer",
-    status: "completed",
-    date: "2025-01-18",
-    description: "Withdrawal to Chase Bank",
-  },
-  {
-    id: "3",
-    type: "earning",
-    amount: 380,
-    method: "Investor Funding",
-    status: "completed",
-    date: "2025-01-15",
-    description: "Weekly earnings from vehicle usage",
-  },
-  {
-    id: "4",
-    type: "withdrawal",
-    amount: 500,
-    method: "Mobile Money",
-    status: "pending",
-    date: "2025-01-21",
-    description: "Withdrawal to MTN Mobile Money",
-  },
-]
+interface LedgerResponse {
+  transactions: Array<{
+    id: string
+    type: string
+    direction: "credit" | "debit"
+    amount: Money
+    method: string | null
+    status: string
+    timestamp: string
+    description: string
+  }>
+}
 
 const paymentMethods = [
   {
@@ -120,7 +102,43 @@ export function WithdrawalSystem({ availableFunds, totalEarnings, pendingWithdra
   const [selectedMethod, setSelectedMethod] = useState("")
   const [accountDetails, setAccountDetails] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true)
+  const [transactionsError, setTransactionsError] = useState<string | null>(null)
   const { toast } = useToast()
+
+  const fetchTransactions = useCallback(async () => {
+    setIsLoadingTransactions(true)
+    setTransactionsError(null)
+    try {
+      const response = await fetch("/api/transactions/ledger?pageSize=10")
+      const payload = (await response.json()) as LedgerResponse & { message?: string }
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to load transaction history.")
+      }
+
+      setTransactions(
+        payload.transactions.map((transaction) => ({
+          id: transaction.id,
+          type: transaction.type,
+          direction: transaction.direction,
+          amount: transaction.amount,
+          method: transaction.method,
+          status: transaction.status,
+          date: transaction.timestamp,
+          description: transaction.description,
+        })),
+      )
+    } catch (error) {
+      setTransactionsError(error instanceof Error ? error.message : "Unable to load transaction history.")
+    } finally {
+      setIsLoadingTransactions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchTransactions()
+  }, [fetchTransactions])
 
   const selectedPaymentMethod = paymentMethods.find((method) => method.id === selectedMethod)
   const withdrawalFee =
@@ -148,34 +166,17 @@ export function WithdrawalSystem({ availableFunds, totalEarnings, pendingWithdra
       return
     }
 
-    setIsProcessing(true)
-
-    try {
-      // Simulate withdrawal processing
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      toast({
-        title: "Withdrawal Initiated",
-        description: `Your withdrawal of $${withdrawalAmount} has been initiated and will be processed within ${selectedPaymentMethod?.processingTime}.`,
-      })
-
-      // Reset form
-      setWithdrawalAmount("")
-      setSelectedMethod("")
-      setAccountDetails("")
-    } catch (error) {
-      toast({
-        title: "Withdrawal Failed",
-        description: "There was an error processing your withdrawal. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
-    }
+    // Withdrawals are not wired up to a payout provider yet, so report the
+    // real "unavailable" state instead of fabricating a success transition.
+    toast({
+      title: "Withdrawals Unavailable",
+      description: "Withdrawals aren't available yet. Please check back soon.",
+      variant: "destructive",
+    })
   }
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
         return <CheckCircle className="h-4 w-4 text-green-600" />
       case "pending":
@@ -188,7 +189,7 @@ export function WithdrawalSystem({ availableFunds, totalEarnings, pendingWithdra
   }
 
   const getStatusColor = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
         return "bg-green-600 text-white"
       case "pending":
@@ -400,47 +401,65 @@ export function WithdrawalSystem({ availableFunds, totalEarnings, pendingWithdra
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {mockTransactions.map((transaction) => (
-                  <div
-                    key={transaction.id}
-                    className="flex items-center justify-between p-4 bg-muted rounded-lg border border-border"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div
-                        className={`p-2 rounded-full ${
-                          transaction.type === "earning" ? "bg-green-100" : "bg-blue-100"
-                        }`}
-                      >
-                        {transaction.type === "earning" ? (
-                          <ArrowUpRight className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <ArrowDownLeft className="h-4 w-4 text-blue-600" />
-                        )}
+              {transactionsError ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                  <p className="text-sm text-muted-foreground">{transactionsError}</p>
+                  <Button variant="outline" size="sm" onClick={() => void fetchTransactions()}>
+                    Try again
+                  </Button>
+                </div>
+              ) : isLoadingTransactions ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="h-16 rounded-lg bg-muted animate-pulse" />
+                  ))}
+                </div>
+              ) : transactions.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">No transactions yet.</div>
+              ) : (
+                <div className="space-y-4">
+                  {transactions.map((transaction) => (
+                    <div
+                      key={transaction.id}
+                      className="flex items-center justify-between p-4 bg-muted rounded-lg border border-border"
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div
+                          className={`p-2 rounded-full ${
+                            transaction.direction === "credit" ? "bg-green-100" : "bg-blue-100"
+                          }`}
+                        >
+                          {transaction.direction === "credit" ? (
+                            <ArrowUpRight className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <ArrowDownLeft className="h-4 w-4 text-blue-600" />
+                          )}
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-foreground">{transaction.description}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            {transaction.method ?? "—"} • {new Date(transaction.date).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-medium text-foreground">{transaction.description}</h4>
-                        <p className="text-sm text-muted-foreground">
-                          {transaction.method} • {new Date(transaction.date).toLocaleDateString()}
+                      <div className="text-right">
+                        <p
+                          className={`font-semibold ${
+                            transaction.direction === "credit" ? "text-green-600" : "text-blue-600"
+                          }`}
+                        >
+                          {transaction.direction === "credit" ? "+" : "-"}${transaction.amount.amountMajor}
                         </p>
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(transaction.status)}
+                          <Badge className={getStatusColor(transaction.status)}>{transaction.status}</Badge>
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p
-                        className={`font-semibold ${
-                          transaction.type === "earning" ? "text-green-600" : "text-blue-600"
-                        }`}
-                      >
-                        {transaction.type === "earning" ? "+" : "-"}${transaction.amount}
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        {getStatusIcon(transaction.status)}
-                        <Badge className={getStatusColor(transaction.status)}>{transaction.status}</Badge>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
