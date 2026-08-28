@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,14 +31,38 @@ import {
   Zap,
 } from "lucide-react"
 
+/** Canonical money envelope from the API. See docs/api-conventions.md. */
+interface Money {
+  currency: string
+  amountMinor: number
+  amountMajor: number
+}
+
 interface Transaction {
   id: string
-  type: "deposit" | "withdrawal" | "investment" | "return"
-  amount: number
-  status: "completed" | "pending" | "failed"
+  type: string
+  amount: Money
+  status: string
   date: string
   description: string
-  method?: string
+  method?: string | null
+}
+
+interface WalletSummaryPayload {
+  wallet: {
+    internalBalance: Money
+    walletAddress: string | null
+  }
+  transactions: Array<{
+    id: string
+    type: string
+    amount: Money
+    status: string
+    method: string | null
+    description: string
+    reference: string | null
+    timestamp: string
+  }>
 }
 
 interface FundsManagementProps {
@@ -46,42 +70,7 @@ interface FundsManagementProps {
   onBalanceUpdate: (newBalance: number) => void
 }
 
-const mockTransactions: Transaction[] = [
-  {
-    id: "1",
-    type: "deposit",
-    amount: 5000,
-    status: "completed",
-    date: "2024-12-20",
-    description: "Bank transfer deposit",
-    method: "Bank Transfer",
-  },
-  {
-    id: "2",
-    type: "investment",
-    amount: 2000,
-    status: "completed",
-    date: "2024-12-19",
-    description: "Investment in Toyota Corolla 2020",
-  },
-  {
-    id: "3",
-    type: "return",
-    amount: 150,
-    status: "completed",
-    date: "2024-12-18",
-    description: "Monthly return from Honda Civic",
-  },
-  {
-    id: "4",
-    type: "withdrawal",
-    amount: 1000,
-    status: "pending",
-    date: "2024-12-17",
-    description: "Withdrawal to bank account",
-    method: "Bank Transfer",
-  },
-]
+const CREDIT_TYPES = new Set(["deposit", "wallet_funding"])
 
 export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManagementProps) {
   const [isDepositOpen, setIsDepositOpen] = useState(false)
@@ -91,8 +80,42 @@ export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManage
   const [depositMethod, setDepositMethod] = useState("")
   const [withdrawMethod, setWithdrawMethod] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
-  const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true)
+  const [transactionsError, setTransactionsError] = useState<string | null>(null)
   const { toast } = useToast()
+
+  const fetchWalletSummary = useCallback(async () => {
+    setIsLoadingTransactions(true)
+    setTransactionsError(null)
+    try {
+      const response = await fetch("/api/wallet/summary")
+      const payload = (await response.json()) as WalletSummaryPayload & { message?: string }
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to load wallet activity.")
+      }
+
+      setTransactions(
+        payload.transactions.map((transaction) => ({
+          id: transaction.id,
+          type: transaction.type,
+          amount: transaction.amount,
+          status: transaction.status,
+          date: transaction.timestamp,
+          description: transaction.description,
+          method: transaction.method,
+        })),
+      )
+    } catch (error) {
+      setTransactionsError(error instanceof Error ? error.message : "Unable to load wallet activity.")
+    } finally {
+      setIsLoadingTransactions(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchWalletSummary()
+  }, [fetchWalletSummary])
 
   const handleDeposit = async () => {
     if (!depositAmount || !depositMethod) {
@@ -106,34 +129,27 @@ export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManage
 
     setIsProcessing(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      const response = await fetch("/api/payments/initialize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountNgn: Number.parseFloat(depositAmount) }),
+      })
 
-      const amount = Number.parseFloat(depositAmount)
-      const newTransaction: Transaction = {
-        id: Date.now().toString(),
-        type: "deposit",
-        amount,
-        status: "completed",
-        date: new Date().toISOString().split("T")[0],
-        description: `${depositMethod} deposit`,
-        method: depositMethod,
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.message || "Unable to initialize payment.")
       }
 
-      setTransactions([newTransaction, ...transactions])
-      onBalanceUpdate(currentBalance + amount)
-      setDepositAmount("")
-      setDepositMethod("")
-      setIsDepositOpen(false)
+      const redirectUrl = payload?.payment?.authorizationUrl
+      if (!redirectUrl) {
+        throw new Error("Missing payment authorization URL.")
+      }
 
-      toast({
-        title: "Deposit Successful",
-        description: `$${amount.toLocaleString()} has been added to your account`,
-      })
+      window.location.href = redirectUrl
     } catch (error) {
       toast({
         title: "Deposit Failed",
-        description: "Please try again later",
+        description: error instanceof Error ? error.message : "Please try again later",
         variant: "destructive",
       })
     } finally {
@@ -161,44 +177,17 @@ export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManage
       return
     }
 
-    setIsProcessing(true)
-    try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      const newTransaction: Transaction = {
-        id: Date.now().toString(),
-        type: "withdrawal",
-        amount,
-        status: "pending",
-        date: new Date().toISOString().split("T")[0],
-        description: `Withdrawal to ${withdrawMethod}`,
-        method: withdrawMethod,
-      }
-
-      setTransactions([newTransaction, ...transactions])
-      onBalanceUpdate(currentBalance - amount)
-      setWithdrawAmount("")
-      setWithdrawMethod("")
-      setIsWithdrawOpen(false)
-
-      toast({
-        title: "Withdrawal Initiated",
-        description: `$${amount.toLocaleString()} withdrawal is being processed`,
-      })
-    } catch (error) {
-      toast({
-        title: "Withdrawal Failed",
-        description: "Please try again later",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
-    }
+    // Withdrawals are not wired up to a payout provider yet, so report the
+    // real "unavailable" state instead of fabricating a success transition.
+    toast({
+      title: "Withdrawals Unavailable",
+      description: "Withdrawals aren't available yet. Please check back soon.",
+      variant: "destructive",
+    })
   }
 
   const getStatusIcon = (status: string) => {
-    switch (status) {
+    switch (status.toLowerCase()) {
       case "completed":
         return <CheckCircle className="h-4 w-4 text-green-500" />
       case "pending":
@@ -213,29 +202,24 @@ export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManage
   const getTransactionIcon = (type: string) => {
     switch (type) {
       case "deposit":
+      case "wallet_funding":
         return <ArrowDownLeft className="h-4 w-4 text-green-500" />
-      case "withdrawal":
+      case "wallet_debit":
         return <ArrowUpRight className="h-4 w-4 text-red-500" />
-      case "investment":
+      case "pool_investment":
         return <TrendingUp className="h-4 w-4 text-blue-500" />
-      case "return":
-        return <DollarSign className="h-4 w-4 text-green-500" />
       default:
         return <DollarSign className="h-4 w-4 text-gray-500" />
     }
   }
 
-  const totalDeposits = transactions
-    .filter((t) => t.type === "deposit" && t.status === "completed")
-    .reduce((sum, t) => sum + t.amount, 0)
+  const totalInvestments = transactions
+    .filter((t) => t.type === "pool_investment")
+    .reduce((sum, t) => sum + t.amount.amountMajor, 0)
 
-  const totalWithdrawals = transactions
-    .filter((t) => t.type === "withdrawal" && t.status === "completed")
-    .reduce((sum, t) => sum + t.amount, 0)
-
-  const totalInvestments = transactions.filter((t) => t.type === "investment").reduce((sum, t) => sum + t.amount, 0)
-
-  const totalReturns = transactions.filter((t) => t.type === "return").reduce((sum, t) => sum + t.amount, 0)
+  const totalReturns = transactions
+    .filter((t) => t.type === "return")
+    .reduce((sum, t) => sum + t.amount.amountMajor, 0)
 
   return (
     <div className="space-y-6">
@@ -474,41 +458,56 @@ export function FundsManagement({ currentBalance, onBalanceUpdate }: FundsManage
           <CardDescription className="text-muted-foreground">Recent account activity</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {transactions.slice(0, 5).map((transaction) => (
-              <div key={transaction.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                <div className="flex items-center space-x-3">
-                  {getTransactionIcon(transaction.type)}
-                  <div>
-                    <p className="font-medium text-foreground capitalize">{transaction.type}</p>
-                    <p className="text-sm text-muted-foreground">{transaction.description}</p>
-                    <p className="text-xs text-muted-foreground">{transaction.date}</p>
+          {transactionsError ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+              <AlertCircle className="h-6 w-6 text-destructive" />
+              <p className="text-sm text-muted-foreground">{transactionsError}</p>
+              <Button variant="outline" size="sm" onClick={() => void fetchWalletSummary()}>
+                Try again
+              </Button>
+            </div>
+          ) : isLoadingTransactions ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="h-16 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">No transactions yet.</div>
+          ) : (
+            <div className="space-y-4">
+              {transactions.slice(0, 5).map((transaction) => (
+                <div key={transaction.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    {getTransactionIcon(transaction.type)}
+                    <div>
+                      <p className="font-medium text-foreground capitalize">
+                        {transaction.type.replace(/_/g, " ")}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{transaction.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(transaction.date).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-center space-x-2">
+                      <span
+                        className={`font-bold ${
+                          CREDIT_TYPES.has(transaction.type) ? "text-green-500" : "text-red-500"
+                        }`}
+                      >
+                        {CREDIT_TYPES.has(transaction.type) ? "+" : "-"}$
+                        {transaction.amount.amountMajor.toLocaleString()}
+                      </span>
+                      {getStatusIcon(transaction.status)}
+                    </div>
+                    {transaction.method && <p className="text-xs text-muted-foreground">{transaction.method}</p>}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="flex items-center space-x-2">
-                    <span
-                      className={`font-bold ${
-                        transaction.type === "deposit" || transaction.type === "return"
-                          ? "text-green-500"
-                          : "text-red-500"
-                      }`}
-                    >
-                      {transaction.type === "deposit" || transaction.type === "return" ? "+" : "-"}$
-                      {transaction.amount.toLocaleString()}
-                    </span>
-                    {getStatusIcon(transaction.status)}
-                  </div>
-                  {transaction.method && <p className="text-xs text-muted-foreground">{transaction.method}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 text-center">
-            <Button variant="outline" className="border-border text-foreground hover:bg-muted">
-              View All Transactions
-            </Button>
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
