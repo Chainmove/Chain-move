@@ -18,6 +18,8 @@ import {
   type ApiErrorEnvelope,
 } from "@/lib/api/errors"
 import { assertNoForbiddenFields, assertNoRawDocuments } from "@/lib/api/serialization"
+import { logger } from "@/lib/observability/logger"
+import { incrementMetric, recordLatency } from "@/lib/observability/metrics"
 import {
   API_VERSION_HEADER,
   deprecationHeaders,
@@ -120,6 +122,7 @@ export function defineRoute<
 >(definition: RouteDefinition<TParamsSchema, TQuerySchema, TBodySchema, TResponseSchema, TAuth>) {
   return async function routeHandler(request: Request, nextContext: NextRouteContext): Promise<Response> {
     const correlationId = resolveCorrelationId(request)
+    const startedAt = performance.now()
     const extraHeaders: Record<string, string> = {}
     let successStatus = definition.successStatus ?? (definition.method === "POST" ? 201 : 200)
     let version: ApiVersion | undefined
@@ -165,20 +168,47 @@ export function defineRoute<
       })
 
       if (auth.shouldRefreshSession && auth.user) {
+        logRequest(definition, request, correlationId, successStatus, startedAt)
         return withSessionRefresh(response, auth.user)
       }
 
+      logRequest(definition, request, correlationId, successStatus, startedAt)
       return response
     } catch (error) {
-      return errorResponse(error, {
+      const response = errorResponse(error, {
         correlationId,
         operationId: definition.operationId,
         method: definition.method,
         version,
         headers: definition.deprecation ? deprecationHeaders(definition.deprecation) : {},
       })
+      logRequest(definition, request, correlationId, response.status, startedAt)
+      return response
     }
   }
+}
+
+function logRequest(
+  definition: { operationId: string; method: HttpMethod },
+  request: Request,
+  correlationId: string,
+  status: number,
+  startedAt: number,
+) {
+  const durationMs = Math.round((performance.now() - startedAt) * 100) / 100
+  const outcome = status >= 500 ? "5xx" : status >= 400 ? "4xx" : "success"
+  incrementMetric("http.requests", outcome)
+  if (status >= 500) incrementMetric("http.errors", "5xx")
+  recordLatency("http.duration", durationMs)
+  logger.info({
+    event: "http.request.completed",
+    correlationId,
+    operationId: definition.operationId,
+    method: definition.method,
+    route: new URL(request.url).pathname,
+    status,
+    durationMs,
+  })
 }
 
 /** Sentinel a handler can return to emit `204 No Content`. */
@@ -456,11 +486,11 @@ function logApiError(
   // 5xx means the server is at fault and an operator needs the stack; 4xx is
   // routine client behaviour and stays at debug volume.
   if (error.status >= 500) {
-    console.error("API_ERROR", detail, (error as { cause?: unknown }).cause ?? error)
+    logger.error({ event: "api.error", ...detail, error: (error as { cause?: unknown }).cause ?? error })
     return
   }
 
   if (process.env.NODE_ENV === "development") {
-    console.warn("API_CLIENT_ERROR", detail)
+    logger.debug({ event: "api.client_error", ...detail })
   }
 }
