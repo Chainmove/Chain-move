@@ -1,16 +1,19 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose"
 import { cookies } from "next/headers"
+import { randomUUID } from "crypto"
 import type { NextResponse } from "next/server"
 
 export const SESSION_COOKIE_NAME = "token"
 
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
+export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7
 
 export interface SessionPayload extends JWTPayload {
   userId: string
   role: "driver" | "investor" | "admin"
   name?: string
   privyUserId?: string
+  /** Unique token identifier — used for per-token revocation. */
+  jti: string
 }
 
 function getJwtSecret() {
@@ -22,10 +25,12 @@ function getJwtSecret() {
   return new TextEncoder().encode(secret)
 }
 
-export async function signSessionToken(payload: SessionPayload) {
-  return new SignJWT(payload)
+export async function signSessionToken(payload: Omit<SessionPayload, "jti"> & { jti?: string }) {
+  const jti = payload.jti ?? randomUUID()
+  return new SignJWT({ ...payload, jti })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(jti)
     .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
     .sign(getJwtSecret())
 }
@@ -53,7 +58,7 @@ export function setSessionCookie(response: NextResponse, token: string) {
     secure: process.env.NODE_ENV !== "development",
     maxAge: SESSION_TTL_SECONDS,
     path: "/",
-    sameSite: "lax",
+    sameSite: "strict",
   })
 }
 
@@ -63,6 +68,6 @@ export function clearSessionCookie(response: NextResponse) {
     secure: process.env.NODE_ENV !== "development",
     expires: new Date(0),
     path: "/",
-    sameSite: "lax",
+    sameSite: "strict",
   })
 }

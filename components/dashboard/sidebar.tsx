@@ -4,12 +4,15 @@ import { useEffect, useMemo, useState, type ComponentType } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
+  Activity,
   Calendar,
+  Bell,
   Car,
   ChevronDown,
   Coins,
   Compass,
   FileText,
+  Gauge,
   Layers,
   LayoutDashboard,
   LogOut,
@@ -83,13 +86,18 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
       id: "investor-finances",
       label: "Finances",
       defaultExpanded: true,
-      items: [{ label: "My Wallet", href: "/dashboard/investor/wallet", icon: Wallet }],
+      items: [
+        { label: "My Wallet", href: "/dashboard/investor/wallet", icon: Wallet },
+        { label: "Stellar Activity", href: "/dashboard/investor/stellar", icon: Activity },
+        { label: "Transaction Ledger", href: "/dashboard/investor/ledger", icon: Receipt },
+      ],
     },
     {
       id: "investor-account",
       label: "Account",
       defaultExpanded: true,
       items: [
+        { label: "Activity", href: "/dashboard/investor/activity", icon: Bell },
         { label: "Settings", href: "/dashboard/investor/settings", icon: Settings },
         { label: "KYC", href: "/dashboard/investor/kyc", icon: UserCheck },
       ],
@@ -110,6 +118,7 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
         { label: "My Vehicle / Contract", href: "/dashboard/driver/contract", icon: Calendar },
         { label: "Make Payment", href: "/dashboard/driver/repayment", icon: Wallet },
         { label: "Payment History", href: "/dashboard/driver/payments", icon: Receipt },
+        { label: "Transaction Ledger", href: "/dashboard/driver/ledger", icon: Receipt },
       ],
     },
     {
@@ -117,6 +126,7 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
       label: "Account",
       defaultExpanded: true,
       items: [
+        { label: "Activity", href: "/dashboard/driver/activity", icon: Bell },
         { label: "Settings", href: "/dashboard/driver/settings", icon: Settings },
         { label: "KYC", href: "/dashboard/driver/kyc", icon: UserCheck },
       ],
@@ -146,7 +156,10 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
       label: "Governance",
       defaultExpanded: true,
       items: [
+        { label: "Activity", href: "/dashboard/admin/activity", icon: Bell },
         { label: "Reports", href: "/dashboard/admin/reports", icon: FileText },
+        { label: "Transaction Ledger", href: "/dashboard/admin/ledger", icon: Receipt },
+        { label: "Stellar Ledger", href: "/dashboard/admin/stellar", icon: Activity },
         { label: "Issues", href: "/dashboard/admin/issues", icon: ShieldAlert },
         { label: "Governance", href: "/dashboard/admin/governance", icon: Vote },
       ],

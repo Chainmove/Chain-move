@@ -5,6 +5,7 @@ import { finalizeAuthenticatedResponse, normalizeUserRole, requireAuthenticatedU
 import { parseSearchParams } from "@/lib/api/validation"
 import dbConnect from "@/lib/dbConnect"
 import Transaction from "@/models/Transaction"
+import { decodeCursor, encodeCursor } from "@/lib/api/cursor"
 
 const TRANSACTION_TYPES = [
   "investment",
@@ -38,6 +39,7 @@ const querySchema = z.object({
     }, z.array(z.enum(TRANSACTION_TYPES)).max(10))
     .default([]),
   limit: z.coerce.number().int().min(1).max(200).default(100),
+  cursor: z.string().max(1000).optional(),
 })
 
 export async function GET(request: Request) {
@@ -68,11 +70,25 @@ export async function GET(request: Request) {
       filter.type = { $in: query.data.includeTypes }
     }
 
-    const transactions = await Transaction.find(filter)
-      .sort({ timestamp: -1 })
-      .limit(query.data.limit)
+    const scope = JSON.stringify({ userId: filter.userId || "all", userType: filter.userType || "all", types: query.data.includeTypes })
+    let cursor
+    try { cursor = decodeCursor(query.data.cursor, scope) }
+    catch { return NextResponse.json({ error: "Invalid or expired cursor" }, { status: 400 }) }
+    if (cursor) filter.$or = [{ timestamp: { $lt: cursor.timestamp } }, { timestamp: cursor.timestamp, _id: { $lt: cursor.id } }]
 
-    const response = NextResponse.json({ success: true, transactions })
+    const transactions = await Transaction.find(filter)
+      .select("userId userType type amount currency description status relatedId timestamp")
+      .sort({ timestamp: -1, _id: -1 })
+      .limit(query.data.limit + 1)
+      .maxTimeMS(1500)
+      .lean()
+
+    const hasMore = transactions.length > query.data.limit
+    const page = transactions.slice(0, query.data.limit)
+    const last = page.at(-1)
+    const nextCursor = hasMore && last ? encodeCursor({ timestamp: last.timestamp, id: String(last._id) }, scope) : null
+
+    const response = NextResponse.json({ success: true, transactions: page, nextCursor })
     return finalizeAuthenticatedResponse(response, authContext)
   } catch (error) {
     console.error("TRANSACTIONS_GET_ERROR", error)

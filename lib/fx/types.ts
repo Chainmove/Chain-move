@@ -1,0 +1,130 @@
+import { z } from "zod"
+
+export const SUPPORTED_CURRENCIES = ["NGN", "USD", "EUR", "GBP"] as const
+export type CurrencyCode = (typeof SUPPORTED_CURRENCIES)[number]
+
+export const CurrencyCodeSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.toUpperCase())
+  .pipe(z.enum(SUPPORTED_CURRENCIES))
+
+export const MoneyMajorSchema = z.object({
+  currency: CurrencyCodeSchema,
+  amountMajor: z.number().finite().positive(),
+})
+
+export type MoneyMajor = z.infer<typeof MoneyMajorSchema>
+
+export type QuoteDirection = "direct" | "inverse"
+export type AmountPolicy = "exact-source" | "max-source"
+export type QuoteStatus = "created" | "locked" | "consumed" | "expired"
+export type QuoteConsumeFailureReason =
+  | "not-found"
+  | "already-consumed"
+  | "expired"
+  | "locked"
+  | "amount-mismatch"
+  | "conflict"
+
+export type ExchangeRateQuoteSnapshot = {
+  id: string
+  version: number
+  baseCurrency: CurrencyCode
+  quoteCurrency: CurrencyCode
+  direction: QuoteDirection
+  sourceAmountMajor: number
+  sourceAmountMinor: number
+  convertedAmountMajor: number
+  convertedAmountMinor: number
+  rate: number
+  providerRate: number
+  provider: string
+  providerTimestamp: Date
+  fetchedAt: Date
+  expiresAt: Date
+  markupBps: number
+  spreadBps: number
+  amountPolicy: AmountPolicy
+  status: QuoteStatus
+  idempotencyKey?: string
+  consumedAt?: Date
+  consumedBy?: string
+}
+
+export type ConsumeQuoteAtomicInput = {
+  quoteId: string
+  expectedVersion: number
+  baseCurrency: CurrencyCode
+  quoteCurrency: CurrencyCode
+  direction: QuoteDirection
+  sourceAmountMajor?: number
+  sourceAmountMinor?: number
+  amountPolicy: AmountPolicy
+  consumedBy: string
+  now: Date
+}
+
+export type ConsumeQuoteAtomicResult =
+  | { ok: true; quote: ExchangeRateQuoteSnapshot }
+  | { ok: false; reason: QuoteConsumeFailureReason; quote?: ExchangeRateQuoteSnapshot }
+
+export const MINOR_UNITS: Record<CurrencyCode, number> = {
+  NGN: 2,
+  USD: 2,
+  EUR: 2,
+  GBP: 2,
+}
+
+export function assertCurrency(value: string): CurrencyCode {
+  return CurrencyCodeSchema.parse(value)
+}
+
+export function isValidRate(rate: number) {
+  return Number.isFinite(rate) && rate > 0
+}
+
+export function toMinorUnits(amountMajor: number, currency: CurrencyCode) {
+  if (!Number.isFinite(amountMajor)) throw new Error("Money amount must be finite.")
+  const multiplier = 10 ** MINOR_UNITS[currency]
+  return Math.round((amountMajor + Number.EPSILON) * multiplier)
+}
+
+export function parseDecimalToMinorUnits(value: string | number, currency: CurrencyCode) {
+  const raw = String(value).trim()
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) throw new Error("Money amount must be a positive decimal.")
+  const decimals = MINOR_UNITS[currency]
+  const [whole, fraction = ""] = raw.split(".")
+  if (fraction.length > decimals) throw new Error(`${currency} amounts support at most ${decimals} decimal places.`)
+  const minor = BigInt(whole) * BigInt(10 ** decimals) + BigInt(fraction.padEnd(decimals, "0") || "0")
+  if (minor <= BigInt(0) || minor > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Money amount is outside the supported exact range.")
+  }
+  return Number(minor)
+}
+
+export function fromMinorUnits(amountMinor: number, currency: CurrencyCode) {
+  const multiplier = 10 ** MINOR_UNITS[currency]
+  return amountMinor / multiplier
+}
+
+export function convertMajorAmount({
+  amountMajor,
+  rate,
+  sourceCurrency,
+  targetCurrency,
+}: {
+  amountMajor: number
+  rate: number
+  sourceCurrency: CurrencyCode
+  targetCurrency: CurrencyCode
+}) {
+  if (!isValidRate(rate)) throw new Error("Exchange rate must be positive and finite.")
+  const convertedMajor = amountMajor * rate
+  const convertedMinor = toMinorUnits(convertedMajor, targetCurrency)
+  return {
+    sourceAmountMinor: toMinorUnits(amountMajor, sourceCurrency),
+    convertedAmountMinor: convertedMinor,
+    convertedAmountMajor: fromMinorUnits(convertedMinor, targetCurrency),
+  }
+}

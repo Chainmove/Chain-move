@@ -1,0 +1,4 @@
+{
+  "$comment": "Breaking API changes that have been reviewed and released. CI fails on any breaking change absent from this list. See docs/api-migration.md.",
+  "changes": []
+}

@@ -54,13 +54,13 @@ export async function resolveDvaUserIdentity(
     return {
       user,
       email: normalizeString(user.email)?.toLowerCase() || null,
-      fullName: resolveStoredFullName(user),
+      fullName: resolveStoredFullName(user as any),
       phoneNumber: normalizeString(user.phoneNumber),
     }
   }
 
   let email = normalizeString(user.email)?.toLowerCase() || null
-  let fullName = resolveStoredFullName(user)
+  let fullName = resolveStoredFullName(user as any)
   let phoneNumber = normalizeString(user.phoneNumber)
 
   const needsPrivyFallback = (!email || !fullName || !phoneNumber) && normalizeString(user.privyUserId)

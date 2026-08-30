@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, type ReactElement } from "react"
 import { useRouter } from "next/navigation"
 import { CheckCircle, Clock, Loader2 } from "lucide-react"
 
@@ -47,7 +47,7 @@ export default function InvestorKycStatusPage() {
   let icon = <Loader2 className="mx-auto mb-4 h-14 w-14 animate-spin text-muted-foreground" />
   let title = "Checking KYC status..."
   let description = "Please wait while we load your investor verification status."
-  let action: JSX.Element | null = null
+  let action: ReactElement | null = null
 
   if (status === "pending") {
     icon = <Clock className="mx-auto mb-4 h-14 w-14 text-yellow-500" />

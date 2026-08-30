@@ -6,8 +6,17 @@ import { logAuditEvent } from "@/lib/security/audit-log"
 import { getClientIpAddress } from "@/lib/security/rate-limit"
 import { validatePhoneNumberInput } from "@/lib/validation/phone"
 import User from "@/models/User"
+import { createApprovalRequest } from "@/lib/approvals/service"
+import { ApprovalError } from "@/lib/approvals/errors"
 
-type RouteContext = { params: { id: string } }
+const APPROVAL_ERROR_STATUS: Partial<Record<ApprovalError["code"], number>> = {
+  already_in_flight: 409,
+  target_not_found: 404,
+  invalid_command: 400,
+  business_rule_violated: 400,
+}
+
+type RouteContext = { params: Promise<{ id: string }> }
 type UserRole = "admin" | "driver" | "investor"
 
 const VALID_ROLES: UserRole[] = ["admin", "driver", "investor"]
@@ -88,12 +97,13 @@ function resolveDuplicateKeyMessage(error: unknown) {
 
 export async function GET(request: Request, { params }: RouteContext) {
   try {
+    const { id } = await params
     const auth = await requireAdmin(request)
     if ("error" in auth) return auth.error
 
     await dbConnect()
 
-    const user = await User.findById(params.id).select(
+    const user = await User.findById(id).select(
       "name fullName email phoneNumber role walletAddress walletaddress privyUserId availableBalance totalInvested totalReturns createdAt",
     )
 
@@ -117,7 +127,8 @@ export async function GET(request: Request, { params }: RouteContext) {
 
 export async function PUT(request: Request, { params }: RouteContext) {
   try {
-    const auth = await requireUserUpdateAccess(request, params.id)
+    const { id } = await params
+    const auth = await requireUserUpdateAccess(request, id)
     if ("error" in auth) return auth.error
 
     await dbConnect()
@@ -147,11 +158,11 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return NextResponse.json({ message: "No user changes were provided." }, { status: 400 })
     }
 
-    if (params.id === auth.user._id.toString() && hasRole && role !== "admin") {
+    if (id === auth.user!._id.toString() && hasRole && role !== "admin") {
       return NextResponse.json({ message: "You cannot remove your own admin access." }, { status: 403 })
     }
 
-    const existingUser = await User.findById(params.id).select(
+    const existingUser = await User.findById(id).select(
       "name fullName email phoneNumber role walletAddress walletaddress privyUserId",
     )
     if (!existingUser) {
@@ -168,12 +179,12 @@ export async function PUT(request: Request, { params }: RouteContext) {
       return NextResponse.json({ message: normalizedPhoneNumberResult.error }, { status: 400 })
     }
 
-    if (hasRole && existingUser.role === "admin" && role !== "admin") {
-      const adminCount = await User.countDocuments({ role: "admin" })
-      if (adminCount <= 1) {
-        return NextResponse.json({ message: "At least one admin account must remain active." }, { status: 400 })
-      }
-    }
+    // Role reassignment (including the "at least one admin must remain"
+    // rule) is delegated to the maker-checker approval engine below: a
+    // privilege-crossing change (granting or removing "admin") requires a
+    // second admin's approval, while a driver<->investor change is a
+    // low-risk, auditable exemption that still executes immediately.
+    const wantsRoleChange = Boolean(hasRole && role && existingUser.role !== role)
 
     const changedFields: string[] = []
 
@@ -232,43 +243,63 @@ export async function PUT(request: Request, { params }: RouteContext) {
       }
     }
 
-    if (hasRole && role && existingUser.role !== role) {
-      existingUser.role = role
-      changedFields.push("role")
-    }
-
-    if (changedFields.length === 0) {
+    if (changedFields.length === 0 && !wantsRoleChange) {
       return NextResponse.json({ message: "No user changes were detected." }, { status: 200 })
     }
 
-    await existingUser.save()
+    let pendingRoleApproval: string | null = null
 
-    await logAuditEvent({
-      actor: auth.user,
-      action: auth.isSelf ? "user.self_update" : "user.update",
-      targetType: "user",
-      targetId: params.id,
-      ipAddress: getClientIpAddress(request),
-      metadata: {
-        changedFields,
-        newRole: hasRole ? role : existingUser.role,
-      },
-    })
+    if (wantsRoleChange) {
+      try {
+        const { request: approvalRequest, autoExecuted } = await createApprovalRequest({
+          operationType: "user.role_reassign",
+          targetId: id,
+          rawCommand: { role },
+          requester: { id: auth.user!._id.toString(), role: auth.user!.role },
+          reason: `Role reassignment requested via admin user update (${existingUser.role} -> ${role}).`,
+        })
+        if (!autoExecuted) {
+          pendingRoleApproval = approvalRequest._id.toString()
+        }
+      } catch (error) {
+        if (error instanceof ApprovalError) {
+          return NextResponse.json(
+            { message: error.message },
+            { status: APPROVAL_ERROR_STATUS[error.code] || 400 },
+          )
+        }
+        throw error
+      }
+    }
 
-    const updatedUser = await User.findById(params.id)
+    if (changedFields.length > 0) {
+      await existingUser.save()
+
+      await logAuditEvent({
+        actor: auth.user,
+        action: auth.isSelf ? "user.self_update" : "user.update",
+        targetType: "user",
+        targetId: id,
+        ipAddress: getClientIpAddress(request),
+        metadata: { changedFields },
+      })
+    }
+
+    const updatedUser = await User.findById(id)
       .select("name fullName email phoneNumber role privyUserId walletAddress walletaddress createdAt")
       .lean()
 
+    let message = auth.isSelf ? "Profile updated successfully" : "User updated successfully"
+    if (wantsRoleChange) {
+      message = pendingRoleApproval
+        ? `${message}. Role change to '${role}' requires a second admin's approval.`
+        : `${message}. Role updated to '${role}'.`
+    }
+
     const response = NextResponse.json({
-      message:
-        auth.isSelf
-          ? "Profile updated successfully"
-          : hasRole && role === "admin" && !changedFields.includes("role")
-            ? "User updated successfully"
-            : hasRole && role === "admin"
-              ? "User updated and promoted to admin successfully"
-              : "User updated successfully",
+      message,
       user: updatedUser,
+      ...(pendingRoleApproval ? { pendingApproval: true, approvalRequestId: pendingRoleApproval } : {}),
     })
 
     if (auth.isSelf) {
@@ -289,16 +320,17 @@ export async function PUT(request: Request, { params }: RouteContext) {
 
 export async function DELETE(request: Request, { params }: RouteContext) {
   try {
+    const { id } = await params
     const auth = await requireAdmin(request)
     if ("error" in auth) return auth.error
 
     await dbConnect()
 
-    if (params.id === auth.user._id.toString()) {
+    if (id === auth.user!._id.toString()) {
       return NextResponse.json({ message: "You cannot delete your own account." }, { status: 403 })
     }
 
-    const existingUser = await User.findById(params.id).select("role")
+    const existingUser = await User.findById(id).select("role")
     if (!existingUser) {
       return NextResponse.json({ message: "User not found" }, { status: 404 })
     }
@@ -310,13 +342,13 @@ export async function DELETE(request: Request, { params }: RouteContext) {
       }
     }
 
-    await User.findByIdAndDelete(params.id)
+    await User.findByIdAndDelete(id)
 
     await logAuditEvent({
       actor: auth.user,
       action: "user.delete",
       targetType: "user",
-      targetId: params.id,
+      targetId: id,
       ipAddress: getClientIpAddress(request),
       metadata: {
         deletedRole: existingUser.role,

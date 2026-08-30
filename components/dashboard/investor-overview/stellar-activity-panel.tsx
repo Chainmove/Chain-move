@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { ExternalLink, Loader2, RefreshCw, Sparkles } from "lucide-react"
+// @ts-ignore - date-fns typings bundler resolution
 import { format } from "date-fns"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import { getStellarConfig, getStellarNetworkLabel } from "@/lib/stellar/config"
+import { getStellarDisplayConfig, getStellarNetworkLabel } from "@/lib/stellar/display-config"
 import { createMockStellarActivityFeed, type StellarActivityItem } from "@/lib/stellar/mock-activity"
 
 export interface StellarActivityPanelData {
@@ -112,7 +113,7 @@ export function StellarActivityPanel({
   isRefreshing = false,
   className,
 }: StellarActivityPanelProps) {
-  const config = useMemo(() => getStellarConfig(), [])
+  const config = useMemo(() => getStellarDisplayConfig(), [])
   const networkLabel = getStellarNetworkLabel(config.network)
 
   return (
@@ -266,7 +267,7 @@ export function StellarActivityPanel({
 }
 
 export function InvestorStellarActivityPanel({ className }: { className?: string }) {
-  const config = useMemo(() => getStellarConfig(), [])
+  const config = useMemo(() => getStellarDisplayConfig(), [])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<StellarActivityPanelData | null>(null)

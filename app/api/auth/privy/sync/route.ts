@@ -8,6 +8,7 @@ import { setSessionCookie, signSessionToken } from "@/lib/auth/session"
 import { parseJsonBody } from "@/lib/api/validation"
 import { buildRateLimitKey, consumeRateLimit, getClientIpAddress, rateLimitExceededResponse } from "@/lib/security/rate-limit"
 import { validatePhoneNumberInput } from "@/lib/validation/phone"
+import { logAuthEvent } from "@/lib/auth/auth-event-log"
 
 type RequestedUserRole = "driver" | "investor"
 
@@ -259,6 +260,14 @@ export async function POST(request: Request) {
       user = fallbackUser
     }
 
+    const isNewUser = !user.createdAt || (Date.now() - new Date(user.createdAt).getTime() < 5_000)
+    logAuthEvent({
+      type: isNewUser ? "signup" : "login",
+      userId: user._id.toString(),
+      privyUserId: user.privyUserId,
+      request,
+    })
+
     const sessionToken = await signSessionToken({
       userId: user._id.toString(),
       role: user.role,
@@ -286,7 +295,8 @@ export async function POST(request: Request) {
     return response
   } catch (error) {
     console.error("PRIVY_SYNC_ERROR", error)
-    if (error instanceof Error && /jwt|jwks|signature|issuer|audience/i.test(error.message)) {
+    if (error instanceof Error && /jwt|jwks|signature|issuer|audience|algorithm|subject/i.test(error.message)) {
+      logAuthEvent({ type: "token_invalid", detail: "privy_sync verification failed", request })
       return NextResponse.json({ message: "Unable to verify Privy identity. Please sign in again." }, { status: 401 })
     }
 

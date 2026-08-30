@@ -1,68 +1,74 @@
-import { NextResponse } from "next/server"
-
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { DriverVirtualAccountResponseSchema } from "@/lib/api/contracts"
+import { ApiError } from "@/lib/api/errors"
+import { defineRoute } from "@/lib/api/route-handler"
+import { money } from "@/lib/api/serialization"
 import { getDriverContract } from "@/lib/services/driver-contracts.service"
 import {
   DriverVirtualAccountProvisionError,
   getOrProvisionDriverVirtualAccount,
 } from "@/lib/services/paystack-dva.service"
 
-export async function GET(request: Request) {
-  try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
+/**
+ * Maps provider provisioning failures onto the standard envelope.
+ *
+ * The provider's own message is not forwarded: Paystack error text can quote
+ * request payloads and business identifiers. The provider code is preserved in
+ * server logs via `logContext` so support can still trace a failure.
+ */
+function mapProvisionError(error: unknown): never {
+  if (!(error instanceof DriverVirtualAccountProvisionError)) throw error
 
-    if (user.role !== "driver") {
-      return NextResponse.json({ message: "Only drivers can access dedicated repayment accounts." }, { status: 403 })
-    }
+  // 4xx from the provider means the request was rejected on its merits, so the
+  // caller can act on it; 5xx means the provider itself is unhealthy.
+  const isClientFault = error.statusCode >= 400 && error.statusCode < 500
 
-    const contract = await getDriverContract(user._id.toString())
+  throw new ApiError(isClientFault ? "UNPROCESSABLE" : "UPSTREAM_PROVIDER_ERROR", {
+    message: isClientFault
+      ? "A dedicated account could not be created with your current profile details."
+      : "The banking provider is temporarily unavailable. Please try again shortly.",
+    cause: error,
+    logContext: { providerCode: error.code, providerStatus: error.statusCode },
+  })
+}
+
+export const GET = defineRoute({
+  operationId: "getDriverVirtualAccount",
+  method: "GET",
+  auth: "authenticated",
+  roles: ["driver"],
+  response: DriverVirtualAccountResponseSchema,
+  successStatus: 200,
+  handler: async ({ user }) => {
+    const contract = await getDriverContract(String(user._id))
     if (!contract || contract.status !== "ACTIVE") {
-      return NextResponse.json(
-        { message: "An active hire-purchase contract is required before a virtual account can be assigned." },
-        { status: 404 },
+      throw ApiError.notFound(
+        "An active hire-purchase contract is required before a virtual account can be assigned.",
       )
     }
 
-    const virtualAccount = await getOrProvisionDriverVirtualAccount({
-      driverUserId: user._id.toString(),
-      contractId: contract.id,
-    })
-
-    const response = NextResponse.json({
-      success: true,
-      data: {
-        accountNumber: virtualAccount.accountNumber,
-        accountName: virtualAccount.accountName,
-        bankName: virtualAccount.bankName,
-        providerSlug: virtualAccount.providerSlug,
-        status: virtualAccount.status,
+    try {
+      const virtualAccount = await getOrProvisionDriverVirtualAccount({
+        driverUserId: String(user._id),
         contractId: contract.id,
-        remainingBalanceNgn: contract.remainingBalanceNgn,
-        nextPaymentAmountNgn: contract.nextPaymentAmountNgn,
-      },
-    })
+      })
 
-    return shouldRefreshSession ? withSessionRefresh(response, user) : response
-  } catch (error) {
-    const message =
-      error instanceof DriverVirtualAccountProvisionError
-        ? error.message
-        : error instanceof Error
-          ? error.message
-          : "Unable to load driver virtual account."
-    const statusCode = error instanceof DriverVirtualAccountProvisionError ? error.statusCode : 500
-    const code = error instanceof DriverVirtualAccountProvisionError ? error.code : "DRIVER_VIRTUAL_ACCOUNT_ERROR"
-
-    return NextResponse.json(
-      {
-        success: false,
-        code,
-        message,
-      },
-      { status: statusCode },
-    )
-  }
-}
+      return {
+        success: true as const,
+        virtualAccount: {
+          accountNumber: virtualAccount.accountNumber,
+          accountName: virtualAccount.accountName,
+          bankName: virtualAccount.bankName,
+          providerSlug: virtualAccount.providerSlug,
+          status: virtualAccount.status,
+          contractId: contract.id,
+          remainingBalance: money(contract.remainingBalanceNgn),
+          nextPaymentAmount: money(contract.nextPaymentAmountNgn),
+          isMock: Boolean(virtualAccount.isMock),
+          // `mockReference` is omitted: it is an internal test-harness handle.
+        },
+      }
+    } catch (error) {
+      return mapProvisionError(error)
+    }
+  },
+})

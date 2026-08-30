@@ -1,6 +1,12 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose"
 
 const PRIVY_ISSUERS = ["privy.io", "https://auth.privy.io", "https://auth.privy.io/"]
+const ACCEPTED_ALGORITHMS = ["ES256"] as const
+
+/** How long a JWKS fetch is considered fresh before the cache is silently refreshed. */
+const JWKS_SOFT_TTL_MS = 5 * 60 * 1_000
+/** How long a stale JWKS is served when the remote is unreachable. */
+const JWKS_STALE_TTL_MS = 10 * 60 * 1_000
 
 type RawLinkedAccount = {
   type?: string
@@ -37,7 +43,12 @@ export interface ParsedPrivyProfile {
   fullName?: string
 }
 
-let cachedPrivyJwks: ReturnType<typeof createRemoteJWKSet> | null = null
+interface JwksCacheEntry {
+  jwks: ReturnType<typeof createRemoteJWKSet>
+  fetchedAt: number
+}
+let jwksCacheEntry: JwksCacheEntry | null = null
+let jwksInflight: Promise<JwksCacheEntry> | null = null
 
 function normalizeString(value: unknown) {
   if (typeof value !== "string") return undefined
@@ -84,12 +95,35 @@ function getPrivyAudience() {
   return appId
 }
 
-function getPrivyJwks() {
-  if (!cachedPrivyJwks) {
-    cachedPrivyJwks = createRemoteJWKSet(new URL(getPrivyJwksUrl()))
+async function getPrivyJwks(): Promise<ReturnType<typeof createRemoteJWKSet>> {
+  const now = Date.now()
+
+  if (jwksCacheEntry && now - jwksCacheEntry.fetchedAt < JWKS_SOFT_TTL_MS) {
+    return jwksCacheEntry.jwks
   }
 
-  return cachedPrivyJwks
+  if (!jwksInflight) {
+    jwksInflight = Promise.resolve()
+      .then(() => {
+        const jwks = createRemoteJWKSet(new URL(getPrivyJwksUrl()))
+        return { jwks, fetchedAt: Date.now() }
+      })
+      .then((entry) => {
+        jwksCacheEntry = entry
+        jwksInflight = null
+        return entry
+      })
+      .catch((err) => {
+        jwksInflight = null
+        if (jwksCacheEntry && now - jwksCacheEntry.fetchedAt < JWKS_STALE_TTL_MS) {
+          return jwksCacheEntry
+        }
+        throw err
+      })
+  }
+
+  const entry = await jwksInflight
+  return entry.jwks
 }
 
 function readBearerToken(headerValue: string | null): string | null {
@@ -210,10 +244,17 @@ export function extractPrivyTokenFromRequest(request: Request) {
 }
 
 export async function verifyPrivyToken(token: string) {
-  const { payload } = await jwtVerify(token, getPrivyJwks(), {
+  const jwks = await getPrivyJwks()
+  const { payload } = await jwtVerify(token, jwks, {
     issuer: PRIVY_ISSUERS,
     audience: getPrivyAudience(),
+    algorithms: [...ACCEPTED_ALGORITHMS],
+    clockTolerance: 60,
   })
+
+  if (!payload.sub || payload.sub.trim().length === 0) {
+    throw new Error("Token subject (sub) is missing or empty.")
+  }
 
   return payload as PrivyIdentityPayload
 }

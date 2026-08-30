@@ -1,0 +1,174 @@
+import { createHash } from "node:crypto"
+
+import dbConnect from "@/lib/dbConnect"
+import Notification from "@/models/Notification"
+import User from "@/models/User"
+
+/**
+ * Backfills the deprecated embedded `User.notifications` array into the
+ * Notification collection, which is the single source of truth for notification
+ * content and read state, then unsets the embedded copy.
+ *
+ * The mapping is deterministic so the migration is safe to re-run and never
+ * duplicates feed entries:
+ *
+ * - Entries whose `id` is an ObjectId hex string (written by the old dual-write
+ *   path) map onto that same collection `_id`.
+ * - Legacy entries without a usable `id` map onto an `_id` derived from a hash
+ *   of the owner, title, message and timestamp, so a second pass targets the
+ *   same document.
+ *
+ * Read state is merged rather than overwritten: the old server action marked
+ * notifications read only on the embedded copy, so an embedded `read: true`
+ * promotes the collection document to read. The reverse never happens — an
+ * embedded `read: false` cannot un-read a notification the user has since
+ * dismissed through /api/activity.
+ */
+
+const OBJECT_ID_PATTERN = /^[a-f\d]{24}$/i
+
+export interface EmbeddedNotificationMigrationResult {
+  usersScanned: number
+  usersCleared: number
+  notificationsCreated: number
+  notificationsReconciled: number
+  notificationsSkipped: number
+  errors: string[]
+}
+
+export interface EmbeddedNotificationMigrationOptions {
+  /** Report what would change without writing anything. */
+  dryRun?: boolean
+}
+
+interface EmbeddedNotification {
+  id?: unknown
+  title?: unknown
+  message?: unknown
+  read?: unknown
+  timestamp?: unknown
+  link?: unknown
+}
+
+function toTimestamp(value: unknown): Date {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+  }
+  // Legacy rows without a usable timestamp collapse onto the epoch so the
+  // derived id stays stable across runs instead of drifting with `Date.now()`.
+  return new Date(0)
+}
+
+function toTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : ""
+}
+
+export function deriveNotificationId(userId: string, entry: EmbeddedNotification): string {
+  const id = toTrimmedString(entry.id)
+  if (OBJECT_ID_PATTERN.test(id)) return id.toLowerCase()
+
+  // NUL separates the fields because it cannot appear in any of them, so two
+  // different entries can never fingerprint to the same string.
+  const fingerprint = [
+    userId,
+    toTrimmedString(entry.title),
+    toTrimmedString(entry.message),
+    toTimestamp(entry.timestamp).toISOString(),
+  ].join("\u0000")
+  return createHash("sha256").update(fingerprint).digest("hex").slice(0, 24)
+}
+
+export async function migrateEmbeddedNotifications(
+  options: EmbeddedNotificationMigrationOptions = {},
+): Promise<EmbeddedNotificationMigrationResult> {
+  await dbConnect()
+
+  const result: EmbeddedNotificationMigrationResult = {
+    usersScanned: 0,
+    usersCleared: 0,
+    notificationsCreated: 0,
+    notificationsReconciled: 0,
+    notificationsSkipped: 0,
+    errors: [],
+  }
+
+  // `notifications` is `select: false`, so it has to be requested explicitly.
+  const users = await User.find({ notifications: { $exists: true, $ne: [] } })
+    .select("+notifications")
+    .lean()
+
+  for (const user of users) {
+    result.usersScanned++
+    const userId = user._id.toString()
+    const entries: EmbeddedNotification[] = Array.isArray(user.notifications) ? user.notifications : []
+    let userFailed = false
+
+    for (const entry of entries) {
+      const title = toTrimmedString(entry.title)
+      const message = toTrimmedString(entry.message)
+
+      // The Notification schema requires both, and a row missing either carries
+      // nothing the user could act on.
+      if (!title || !message) {
+        result.notificationsSkipped++
+        continue
+      }
+
+      const notificationId = deriveNotificationId(userId, entry)
+      const read = entry.read === true
+
+      if (options.dryRun) {
+        result.notificationsCreated++
+        continue
+      }
+
+      try {
+        const upsert = await Notification.updateOne(
+          { _id: notificationId },
+          {
+            $setOnInsert: {
+              userId,
+              title,
+              message,
+              type: "info",
+              category: "system",
+              priority: "low",
+              link: toTrimmedString(entry.link) || undefined,
+              read,
+              timestamp: toTimestamp(entry.timestamp),
+            },
+          },
+          { upsert: true },
+        )
+
+        if (upsert.upsertedCount) {
+          result.notificationsCreated++
+        } else if (read) {
+          // Merge legacy read state onto a document that already existed.
+          const reconciled = await Notification.updateOne(
+            { _id: notificationId, userId, read: false },
+            { $set: { read: true } },
+          )
+          if (reconciled.modifiedCount) result.notificationsReconciled++
+          else result.notificationsSkipped++
+        } else {
+          result.notificationsSkipped++
+        }
+      } catch (error) {
+        userFailed = true
+        result.errors.push(`user ${userId}: ${error instanceof Error ? error.message : "unknown migration error"}`)
+      }
+    }
+
+    // A partially migrated user keeps its embedded array so the next run can
+    // finish the job rather than silently dropping unmigrated notifications.
+    if (userFailed || options.dryRun) continue
+
+    await User.updateOne({ _id: user._id }, { $unset: { notifications: "" } })
+    result.usersCleared++
+  }
+
+  return result
+}

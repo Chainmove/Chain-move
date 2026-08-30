@@ -7,7 +7,8 @@ export interface ILoan extends Document {
   totalAmountToPayBack?: number;
   totalFunded: number;
   fundingProgress: number;
-  status: 'Pending' | 'Under Review' | 'Approved' | 'Rejected' | 'Active' | 'Completed';
+  status: 'Pending' | 'Under Review' | 'Approved' | 'Rejected' | 'Active' | 'Completed' | 'Cancelled';
+  version: number;
   loanTerm: number; // in months
   monthlyPayment: number;
   weeklyPayment?: number;
@@ -35,9 +36,10 @@ const LoanSchema: Schema = new Schema({
   fundingProgress: { type: Number, default: 0 },
   status: {
     type: String,
-    enum: ['Pending', 'Under Review', 'Approved', 'Rejected', 'Active', 'Completed'],
+    enum: ['Pending', 'Under Review', 'Approved', 'Rejected', 'Active', 'Completed', 'Cancelled'],
     default: 'Pending',
   },
+  version: { type: Number, default: 0 },
   loanTerm: { type: Number, required: true },
   monthlyPayment: { type: Number, required: true },
   weeklyPayment: { type: Number },
@@ -65,4 +67,5 @@ LoanSchema.virtual('remainingAmount').get(function() {
   return Number(loan.requestedAmount || 0) - Number(loan.totalFunded || 0)
 });
 
-export default mongoose.models.Loan || mongoose.model<ILoan>('Loan', LoanSchema);
+export default (mongoose.models.Loan ||
+  mongoose.model<ILoan>('Loan', LoanSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

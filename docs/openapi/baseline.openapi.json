@@ -1,0 +1,3794 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ChainMove API",
+    "version": "2026-01-01",
+    "description": "Contract-first API for the ChainMove mobility finance platform. Generated from lib/api/contracts.ts — do not edit by hand."
+  },
+  "servers": [
+    {
+      "url": "https://example.invalid",
+      "description": "Placeholder; set per environment."
+    }
+  ],
+  "tags": [
+    {
+      "name": "admin"
+    },
+    {
+      "name": "driver"
+    },
+    {
+      "name": "fleet"
+    },
+    {
+      "name": "investments"
+    },
+    {
+      "name": "payments"
+    },
+    {
+      "name": "reporting"
+    },
+    {
+      "name": "wallet"
+    },
+    {
+      "name": "webhooks"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "token"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-paystack-signature"
+      }
+    },
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_FAILED",
+              "MALFORMED_JSON",
+              "UNSUPPORTED_MEDIA_TYPE",
+              "UNAUTHENTICATED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "METHOD_NOT_ALLOWED",
+              "CONFLICT",
+              "UNPROCESSABLE",
+              "RATE_LIMITED",
+              "TRANSIENT_CONFLICT",
+              "UPSTREAM_PROVIDER_ERROR",
+              "UPSTREAM_UNAVAILABLE",
+              "NOT_CONFIGURED",
+              "UNSUPPORTED_API_VERSION",
+              "INTERNAL_ERROR"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "fieldErrors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "message"
+              ]
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "message"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "correlationId"
+        ],
+        "description": "Standard error envelope returned by every ChainMove endpoint."
+      },
+      "ApiErrorCode": {
+        "type": "string",
+        "enum": [
+          "VALIDATION_FAILED",
+          "MALFORMED_JSON",
+          "UNSUPPORTED_MEDIA_TYPE",
+          "UNAUTHENTICATED",
+          "FORBIDDEN",
+          "NOT_FOUND",
+          "METHOD_NOT_ALLOWED",
+          "CONFLICT",
+          "UNPROCESSABLE",
+          "RATE_LIMITED",
+          "TRANSIENT_CONFLICT",
+          "UPSTREAM_PROVIDER_ERROR",
+          "UPSTREAM_UNAVAILABLE",
+          "NOT_CONFIGURED",
+          "UNSUPPORTED_API_VERSION",
+          "INTERNAL_ERROR"
+        ]
+      }
+    }
+  },
+  "paths": {
+    "/api/wallet/summary": {
+      "get": {
+        "operationId": "getWalletSummary",
+        "summary": "Internal wallet balance and recent activity.",
+        "tags": [
+          "wallet"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Internal wallet balance and recent activity.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "wallet": {
+                      "type": "object",
+                      "properties": {
+                        "internalBalance": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "walletAddress": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Linked blockchain address, or null when none is linked."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "internalBalance",
+                        "walletAddress"
+                      ]
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "investment",
+                              "loan_disbursement",
+                              "repayment",
+                              "deposit",
+                              "withdrawal",
+                              "return",
+                              "pool_investment",
+                              "wallet_funding",
+                              "wallet_debit",
+                              "down_payment"
+                            ]
+                          },
+                          "amount": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "Pending",
+                              "Completed",
+                              "Failed"
+                            ]
+                          },
+                          "method": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Provider reference, when the transaction came from a gateway."
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "type",
+                          "amount",
+                          "status",
+                          "method",
+                          "description",
+                          "reference",
+                          "timestamp"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "wallet",
+                    "transactions"
+                  ]
+                },
+                "example": {
+                  "success": true,
+                  "wallet": {
+                    "internalBalance": {
+                      "currency": "NGN",
+                      "amountMinor": 4500000,
+                      "amountMajor": 45000
+                    },
+                    "walletAddress": null
+                  },
+                  "transactions": [
+                    {
+                      "id": "665f1a2b3c4d5e6f70819203",
+                      "type": "wallet_funding",
+                      "amount": {
+                        "currency": "NGN",
+                        "amountMinor": 2500000,
+                        "amountMajor": 25000
+                      },
+                      "status": "Completed",
+                      "method": "paystack",
+                      "description": "Wallet funding",
+                      "reference": "cm_wallet_1738240000_ab12cd",
+                      "timestamp": "2026-01-30T09:15:00.000Z"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pools": {
+      "get": {
+        "operationId": "listPools",
+        "summary": "Investment pools visible to the caller.",
+        "tags": [
+          "investments"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filters pools by lifecycle status.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "FUNDED",
+                "CLOSED"
+              ],
+              "description": "Filters pools by lifecycle status."
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Investment pools visible to the caller.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "pools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "assetType": {
+                            "type": "string"
+                          },
+                          "assetPrice": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "targetAmount": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "minContribution": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "OPEN",
+                              "FUNDED",
+                              "CLOSED"
+                            ]
+                          },
+                          "currentRaised": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "remainingAmount": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "investorCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "progressRatio": {
+                            "type": "number",
+                            "minimum": 0,
+                            "description": "currentRaised / targetAmount, clamped at 0 when no target."
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdBy": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "userOwnershipUnits": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "userOwnershipBps": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "userInvested": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "assetType",
+                          "assetPrice",
+                          "targetAmount",
+                          "minContribution",
+                          "status",
+                          "currentRaised",
+                          "remainingAmount",
+                          "investorCount",
+                          "progressRatio",
+                          "description",
+                          "createdBy",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "pools"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createPool",
+        "summary": "Create an investment pool.",
+        "tags": [
+          "investments"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Create an investment pool.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "pool": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "assetType": {
+                          "type": "string"
+                        },
+                        "assetPrice": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "targetAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "minContribution": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "FUNDED",
+                            "CLOSED"
+                          ]
+                        },
+                        "currentRaised": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "remainingAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "investorCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "progressRatio": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "currentRaised / targetAmount, clamped at 0 when no target."
+                        },
+                        "description": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdBy": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        },
+                        "userOwnershipUnits": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "userOwnershipBps": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "userInvested": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "assetType",
+                        "assetPrice",
+                        "targetAmount",
+                        "minContribution",
+                        "status",
+                        "currentRaised",
+                        "remainingAmount",
+                        "investorCount",
+                        "progressRatio",
+                        "description",
+                        "createdBy",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "pool"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assetType": {
+                    "type": "string",
+                    "enum": [
+                      "SHUTTLE",
+                      "KEKE"
+                    ]
+                  },
+                  "targetAmountNgn": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000
+                  },
+                  "minContributionNgn": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "assetType"
+                ]
+              },
+              "example": {
+                "assetType": "KEKE",
+                "targetAmountNgn": 2500000,
+                "description": "Lagos tricycle pool"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pools/{poolId}/invest": {
+      "post": {
+        "operationId": "investInPool",
+        "summary": "Contribute to an investment pool from the internal wallet.",
+        "description": "Debits the caller's internal NGN wallet and records ownership units. Retries are safe when the same `txRef` is supplied.",
+        "tags": [
+          "investments"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "poolId",
+            "in": "path",
+            "required": true,
+            "description": "Investment pool identifier.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f\\d]{24}$",
+              "description": "Investment pool identifier."
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Contribute to an investment pool from the internal wallet.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "investment": {
+                      "type": "object",
+                      "properties": {
+                        "poolId": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "userId": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "amount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "ownershipUnits": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "ownershipBps": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "txRef": {
+                          "type": "string"
+                        },
+                        "poolStatus": {
+                          "type": "string",
+                          "enum": [
+                            "OPEN",
+                            "FUNDED",
+                            "CLOSED"
+                          ]
+                        },
+                        "currentRaised": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "targetAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "investorCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "userBalance": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "poolId",
+                        "userId",
+                        "amount",
+                        "ownershipUnits",
+                        "ownershipBps",
+                        "txRef",
+                        "poolStatus",
+                        "currentRaised",
+                        "targetAmount",
+                        "investorCount",
+                        "userBalance"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "investment"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist, or the caller may not learn that it does.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable; the request may be retried.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amountNgn": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100000000,
+                    "description": "Contribution in NGN major units."
+                  },
+                  "txRef": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "description": "Client idempotency reference."
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "amountNgn"
+                ]
+              },
+              "example": {
+                "amountNgn": 50000,
+                "txRef": "client-generated-ref-001"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/investments": {
+      "get": {
+        "operationId": "listInvestments",
+        "summary": "Investments belonging to the caller, or to a named investor for admins.",
+        "tags": [
+          "investments"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "investorId",
+            "in": "query",
+            "required": false,
+            "description": "Admin-only. Scopes results to one investor.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f\\d]{24}$",
+              "description": "Admin-only. Scopes results to one investor."
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Investments belonging to the caller, or to a named investor for admins.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "investments": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "investorId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "loanId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "vehicleId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "amount": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "monthlyReturn": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "date": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "When the investment was recorded."
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "investorId",
+                          "loanId",
+                          "vehicleId",
+                          "amount",
+                          "monthlyReturn",
+                          "status",
+                          "date"
+                        ]
+                      }
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "investments"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist, or the caller may not learn that it does.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/initialize": {
+      "post": {
+        "operationId": "initializePayment",
+        "summary": "Start a Paystack checkout to fund the internal wallet.",
+        "tags": [
+          "payments"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Start a Paystack checkout to fund the internal wallet.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "payment": {
+                      "type": "object",
+                      "properties": {
+                        "authorizationUrl": {
+                          "type": "string",
+                          "format": "uri",
+                          "description": "Redirect the payer here to complete checkout."
+                        },
+                        "accessCode": {
+                          "type": "string"
+                        },
+                        "reference": {
+                          "type": "string",
+                          "description": "ChainMove-generated reference for reconciliation."
+                        },
+                        "amount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "authorizationUrl",
+                        "accessCode",
+                        "reference",
+                        "amount"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "payment"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "An upstream provider rejected the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "amountNgn": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100000000,
+                    "description": "Funding amount in NGN major units."
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "maxLength": 254,
+                    "description": "Overrides the account email for this checkout."
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "amountNgn"
+                ]
+              },
+              "example": {
+                "amountNgn": 25000
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/webhook": {
+      "post": {
+        "operationId": "paystackWebhook",
+        "summary": "Paystack event receiver.",
+        "description": "Verifies the `x-paystack-signature` header before processing. Always acknowledges verified events so Paystack does not retry indefinitely. Documented only: this handler is not yet built on the shared route wrapper.",
+        "tags": [
+          "webhooks"
+        ],
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paystack event receiver.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "success",
+                        "ignored"
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "Settlement type resolved for the event."
+                    },
+                    "alreadyProcessed": {
+                      "type": "boolean",
+                      "description": "True when the event was a duplicate delivery."
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why a verified event was ignored."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "event",
+                  "data"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/driver/virtual-account": {
+      "get": {
+        "operationId": "getDriverVirtualAccount",
+        "summary": "Dedicated bank account for driver repayments.",
+        "description": "Provisions the account on first call. Requires an active hire-purchase contract.",
+        "tags": [
+          "driver"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dedicated bank account for driver repayments.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "virtualAccount": {
+                      "type": "object",
+                      "properties": {
+                        "accountNumber": {
+                          "type": "string"
+                        },
+                        "accountName": {
+                          "type": "string"
+                        },
+                        "bankName": {
+                          "type": "string"
+                        },
+                        "providerSlug": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "contractId": {
+                          "type": "string"
+                        },
+                        "remainingBalance": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "nextPaymentAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "isMock": {
+                          "type": "boolean",
+                          "description": "True when served by the mock payment adapter."
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "accountNumber",
+                        "accountName",
+                        "bankName",
+                        "providerSlug",
+                        "status",
+                        "contractId",
+                        "remainingBalance",
+                        "nextPaymentAmount",
+                        "isMock"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "virtualAccount"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist, or the caller may not learn that it does.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "An upstream provider rejected the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fleet/documents": {
+      "get": {
+        "operationId": "listVehicleDocuments",
+        "summary": "Compliance documents for fleet vehicles.",
+        "tags": [
+          "fleet"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "vehicleId",
+            "in": "query",
+            "required": false,
+            "description": "Scopes documents to a single vehicle.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f\\d]{24}$",
+              "description": "Scopes documents to a single vehicle."
+            }
+          },
+          {
+            "name": "documentType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "insurance_certificate",
+                "roadworthiness",
+                "hackney_permit",
+                "vehicle_license",
+                "inspection_certificate",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Compliance documents for fleet vehicles.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "documents": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "vehicleId": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "documentType": {
+                            "type": "string",
+                            "enum": [
+                              "insurance_certificate",
+                              "roadworthiness",
+                              "hackney_permit",
+                              "vehicle_license",
+                              "inspection_certificate",
+                              "other"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "documentNumber": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "issuingAuthority": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "issueDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "expiryDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "verificationStatus": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "verified",
+                              "expired",
+                              "rejected"
+                            ]
+                          },
+                          "rejectionReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "updatedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "vehicleId",
+                          "documentType",
+                          "title",
+                          "documentNumber",
+                          "issuingAuthority",
+                          "issueDate",
+                          "expiryDate",
+                          "verificationStatus",
+                          "rejectionReason",
+                          "notes",
+                          "createdAt",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "hasNext": {
+                          "type": "boolean"
+                        },
+                        "hasPrevious": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "page",
+                        "pageSize",
+                        "total",
+                        "totalPages",
+                        "hasNext",
+                        "hasPrevious"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "documents",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createVehicleDocument",
+        "summary": "Record a compliance document against a vehicle.",
+        "tags": [
+          "fleet"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Record a compliance document against a vehicle.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "document": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "vehicleId": {
+                          "type": "string",
+                          "pattern": "^[a-f\\d]{24}$",
+                          "description": "24-character hexadecimal identifier."
+                        },
+                        "documentType": {
+                          "type": "string",
+                          "enum": [
+                            "insurance_certificate",
+                            "roadworthiness",
+                            "hackney_permit",
+                            "vehicle_license",
+                            "inspection_certificate",
+                            "other"
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "documentNumber": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "issuingAuthority": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "issueDate": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        },
+                        "expiryDate": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        },
+                        "verificationStatus": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "verified",
+                            "expired",
+                            "rejected"
+                          ]
+                        },
+                        "rejectionReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "notes": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        },
+                        "updatedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time",
+                          "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "vehicleId",
+                        "documentType",
+                        "title",
+                        "documentNumber",
+                        "issuingAuthority",
+                        "issueDate",
+                        "expiryDate",
+                        "verificationStatus",
+                        "rejectionReason",
+                        "notes",
+                        "createdAt",
+                        "updatedAt"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "document"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The resource does not exist, or the caller may not learn that it does.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vehicleId": {
+                    "type": "string",
+                    "pattern": "^[a-f\\d]{24}$",
+                    "description": "24-character hexadecimal identifier."
+                  },
+                  "documentType": {
+                    "type": "string",
+                    "enum": [
+                      "insurance_certificate",
+                      "roadworthiness",
+                      "hackney_permit",
+                      "vehicle_license",
+                      "inspection_certificate",
+                      "other"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "documentNumber": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "issuingAuthority": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "issueDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                    ]
+                  },
+                  "expiryDate": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      }
+                    ]
+                  },
+                  "fileUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "maxLength": 2000
+                  },
+                  "notes": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "vehicleId",
+                  "documentType",
+                  "title",
+                  "issueDate",
+                  "expiryDate"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/ledger": {
+      "get": {
+        "operationId": "listLedgerTransactions",
+        "summary": "Paginated transaction ledger with reconciliation state.",
+        "description": "Admins see every transaction (`scope: global`); other roles see only their own (`scope: self`).",
+        "tags": [
+          "reporting"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "investment",
+                "loan_disbursement",
+                "repayment",
+                "deposit",
+                "withdrawal",
+                "return",
+                "pool_investment",
+                "wallet_funding",
+                "wallet_debit",
+                "down_payment"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Pending",
+                "Completed",
+                "Failed"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          },
+          {
+            "name": "reconciliation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "reconciled",
+                "pending",
+                "failed",
+                "duplicate"
+              ]
+            }
+          },
+          {
+            "name": "userType",
+            "in": "query",
+            "required": false,
+            "description": "Admin-only filter.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "driver",
+                "investor",
+                "admin"
+              ],
+              "description": "Admin-only filter."
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "description": "Admin-only filter.",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f\\d]{24}$",
+              "description": "Admin-only filter."
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                }
+              ]
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated transaction ledger with reconciliation state.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "scope": {
+                      "type": "string",
+                      "enum": [
+                        "global",
+                        "self"
+                      ],
+                      "description": "`global` for admins; `self` for other roles."
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "userId": {
+                            "type": "string"
+                          },
+                          "userType": {
+                            "type": "string"
+                          },
+                          "userName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Populated for admin scope only."
+                          },
+                          "userEmail": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Populated for admin scope only."
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "credit",
+                              "debit"
+                            ]
+                          },
+                          "amount": {
+                            "type": "object",
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Monetary amount. Use amountMinor for any arithmetic."
+                          },
+                          "originalAmount": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "currency": {
+                                "type": "string",
+                                "minLength": 3,
+                                "maxLength": 3,
+                                "description": "ISO 4217 currency code."
+                              },
+                              "amountMinor": {
+                                "type": "integer",
+                                "description": "Amount in minor units, e.g. kobo for NGN."
+                              },
+                              "amountMajor": {
+                                "type": "number",
+                                "description": "Convenience mirror in major units. Display only."
+                              }
+                            },
+                            "additionalProperties": false,
+                            "required": [
+                              "currency",
+                              "amountMinor",
+                              "amountMajor"
+                            ],
+                            "description": "Pre-conversion amount when the transaction was cross-currency."
+                          },
+                          "exchangeRate": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "method": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "Pending",
+                              "Completed",
+                              "Failed"
+                            ]
+                          },
+                          "reconciliation": {
+                            "type": "string",
+                            "enum": [
+                              "reconciled",
+                              "pending",
+                              "failed",
+                              "duplicate"
+                            ]
+                          },
+                          "relatedId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "userId",
+                          "userType",
+                          "userName",
+                          "userEmail",
+                          "type",
+                          "direction",
+                          "amount",
+                          "originalAmount",
+                          "exchangeRate",
+                          "method",
+                          "reference",
+                          "description",
+                          "status",
+                          "reconciliation",
+                          "relatedId",
+                          "timestamp"
+                        ]
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "hasNext": {
+                          "type": "boolean"
+                        },
+                        "hasPrevious": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "page",
+                        "pageSize",
+                        "total",
+                        "totalPages",
+                        "hasNext",
+                        "hasPrevious"
+                      ]
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "totalCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "completedCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "completedAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "pendingCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "pendingAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "failedCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "failedAmount": {
+                          "type": "object",
+                          "properties": {
+                            "currency": {
+                              "type": "string",
+                              "minLength": 3,
+                              "maxLength": 3,
+                              "description": "ISO 4217 currency code."
+                            },
+                            "amountMinor": {
+                              "type": "integer",
+                              "description": "Amount in minor units, e.g. kobo for NGN."
+                            },
+                            "amountMajor": {
+                              "type": "number",
+                              "description": "Convenience mirror in major units. Display only."
+                            }
+                          },
+                          "additionalProperties": false,
+                          "required": [
+                            "currency",
+                            "amountMinor",
+                            "amountMajor"
+                          ],
+                          "description": "Monetary amount. Use amountMinor for any arithmetic."
+                        },
+                        "duplicateCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "totalCount",
+                        "totalAmount",
+                        "completedCount",
+                        "completedAmount",
+                        "pendingCount",
+                        "pendingAmount",
+                        "failedCount",
+                        "failedAmount",
+                        "duplicateCount"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "scope",
+                    "transactions",
+                    "pagination",
+                    "summary"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/kyc-requests": {
+      "get": {
+        "operationId": "listKycRequests",
+        "summary": "KYC review queue.",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "none",
+                "pending",
+                "approved_stage1",
+                "pending_stage2",
+                "approved_stage2",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100000,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "X-API-Version",
+            "in": "header",
+            "required": false,
+            "description": "Pins the API version. Supported: 2026-01-01.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2026-01-01"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "KYC review queue.",
+            "headers": {
+              "X-API-Version": {
+                "description": "API version that served the response.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Correlation id for tracing this request in server logs.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "const": true,
+                      "type": "boolean"
+                    },
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-f\\d]{24}$",
+                            "description": "24-character hexadecimal identifier."
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "driver",
+                              "investor",
+                              "admin"
+                            ]
+                          },
+                          "name": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "email": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "phoneNumber": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "kycStatus": {
+                            "type": "string",
+                            "enum": [
+                              "none",
+                              "pending",
+                              "approved_stage1",
+                              "pending_stage2",
+                              "approved_stage2",
+                              "rejected"
+                            ]
+                          },
+                          "documentCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "documentReferences": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Admin-only. Resolve via GET /api/kyc-documents."
+                          },
+                          "rejectionReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "physicalMeetingStatus": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "physicalMeetingDate": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          },
+                          "updatedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time",
+                            "description": "ISO 8601 UTC timestamp, e.g. 2026-01-31T09:15:00.000Z"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "role",
+                          "name",
+                          "email",
+                          "phoneNumber",
+                          "kycStatus",
+                          "documentCount",
+                          "documentReferences",
+                          "rejectionReason",
+                          "physicalMeetingStatus",
+                          "physicalMeetingDate",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "properties": {
+                        "page": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "totalPages": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "hasNext": {
+                          "type": "boolean"
+                        },
+                        "hasPrevious": {
+                          "type": "boolean"
+                        }
+                      },
+                      "additionalProperties": false,
+                      "required": [
+                        "page",
+                        "pageSize",
+                        "total",
+                        "totalPages",
+                        "hasNext",
+                        "hasPrevious"
+                      ]
+                    }
+                  },
+                  "additionalProperties": false,
+                  "required": [
+                    "success",
+                    "requests",
+                    "pagination"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed or the request was malformed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is authenticated but not permitted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,64 +1,63 @@
-import { NextResponse } from "next/server"
+import {
+  PoolCreateRequestSchema,
+  PoolCreateResponseSchema,
+  PoolListQuerySchema,
+  PoolListResponseSchema,
+} from "@/lib/api/contracts"
+import { ApiError } from "@/lib/api/errors"
+import { defineRoute } from "@/lib/api/route-handler"
+import { serializePool } from "@/lib/api/serializers/pool"
 import { createPool, listPools } from "@/lib/services/pools.service"
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
 
-export async function GET(request: Request) {
-  try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
+export const GET = defineRoute({
+  operationId: "listPools",
+  method: "GET",
+  auth: "authenticated",
+  query: PoolListQuerySchema,
+  response: PoolListResponseSchema,
+  successStatus: 200,
+  handler: async ({ user, query }) => {
+    const pools = await listPools(String(user._id))
+    const filtered = query.status ? pools.filter((pool) => pool.status === query.status) : pools
+
+    return {
+      success: true as const,
+      pools: filtered.map(serializePool),
+    }
+  },
+})
+
+export const POST = defineRoute({
+  operationId: "createPool",
+  method: "POST",
+  auth: "authenticated",
+  roles: ["admin", "investor"],
+  body: PoolCreateRequestSchema,
+  response: PoolCreateResponseSchema,
+  successStatus: 201,
+  handler: async ({ user, body }) => {
+    let pool
+    try {
+      pool = await createPool({
+        assetType: body.assetType,
+        createdBy: String(user._id),
+        targetAmountNgn: body.targetAmountNgn,
+        minContributionNgn: body.minContributionNgn,
+        description: body.description,
+      })
+    } catch (error) {
+      // The service throws plain `Error`s for rule violations such as an
+      // unknown asset type. They are caller-fixable, so they map to a
+      // validation error rather than a 500 — but the service message is not
+      // echoed, since it is not authored as client-facing copy.
+      if (error instanceof Error && !("apiErrorCode" in error)) {
+        throw ApiError.unprocessable("The pool could not be created with the supplied details.", [
+          { path: "assetType", message: "Unsupported or invalid pool configuration." },
+        ])
+      }
+      throw error
     }
 
-    const { searchParams } = new URL(request.url)
-    const statusParam = searchParams.get("status")
-
-    const pools = await listPools(user._id.toString())
-    const filteredPools = statusParam
-      ? pools.filter((pool) => pool.status.toLowerCase() === statusParam.toLowerCase())
-      : pools
-
-    const response = NextResponse.json({ success: true, pools: filteredPools })
-    return shouldRefreshSession ? withSessionRefresh(response, user) : response
-  } catch (error) {
-    console.error("POOLS_GET_ERROR", error)
-    return NextResponse.json({ message: "Failed to load pools." }, { status: 500 })
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
-
-    if (!["admin", "investor"].includes(user.role)) {
-      return NextResponse.json({ message: "Only investors or admins can create pools." }, { status: 403 })
-    }
-
-    const body = await request.json()
-    const targetAmountNgn =
-      body.targetAmountNgn === undefined || body.targetAmountNgn === null || body.targetAmountNgn === ""
-        ? undefined
-        : Number(body.targetAmountNgn)
-    const minContributionNgn =
-      body.minContributionNgn === undefined || body.minContributionNgn === null || body.minContributionNgn === ""
-        ? undefined
-        : Number(body.minContributionNgn)
-
-    const pool = await createPool({
-      assetType: body.assetType,
-      createdBy: user._id.toString(),
-      targetAmountNgn,
-      minContributionNgn,
-      description: body.description,
-    })
-
-    const response = NextResponse.json({ success: true, pool }, { status: 201 })
-    return shouldRefreshSession ? withSessionRefresh(response, user) : response
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create pool."
-    console.error("POOLS_CREATE_ERROR", error)
-    return NextResponse.json({ message }, { status: 400 })
-  }
-}
+    return { success: true as const, pool: serializePool(pool) }
+  },
+})

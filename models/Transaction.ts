@@ -19,6 +19,8 @@ export interface ITransaction extends Document {
   currency?: string
   originalCurrency?: string
   exchangeRate?: number
+  exchangeRateQuoteId?: Schema.Types.ObjectId
+  bookedQuoteSnapshot?: Record<string, unknown>
   method?: "wallet" | "internal_wallet" | "gateway" | "paystack" | "privy" | "system"
   gatewayReference?: string
   description: string
@@ -56,6 +58,8 @@ const TransactionSchema: Schema = new Schema({
   currency: { type: String, default: "NGN" },
   originalCurrency: { type: String },
   exchangeRate: { type: Number },
+  exchangeRateQuoteId: { type: Schema.Types.ObjectId, ref: "ExchangeRateQuote", index: true },
+  bookedQuoteSnapshot: { type: Schema.Types.Mixed },
   method: {
     type: String,
     enum: ["wallet", "internal_wallet", "gateway", "paystack", "privy", "system"],
@@ -72,4 +76,8 @@ const TransactionSchema: Schema = new Schema({
   timestamp: { type: Date, default: Date.now },
 })
 
-export default mongoose.models.Transaction || mongoose.model<ITransaction>("Transaction", TransactionSchema)
+TransactionSchema.index({ userId: 1, userType: 1, timestamp: -1, _id: -1 })
+TransactionSchema.index({ userId: 1, type: 1, timestamp: -1, _id: -1 })
+
+export default (mongoose.models.Transaction ||
+  mongoose.model<ITransaction>("Transaction", TransactionSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

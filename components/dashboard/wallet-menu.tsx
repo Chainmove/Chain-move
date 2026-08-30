@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { ChevronRight, Copy, ExternalLink, Loader2, Wallet } from "lucide-react"
 import { formatEther } from "viem"
-import { liskSepolia } from "viem/chains"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -20,14 +19,11 @@ import { useAuth } from "@/hooks/use-auth"
 import { getPrivyFundingErrorMessage, startPrivyFunding } from "@/lib/auth/privy-funding"
 import { useToast } from "@/components/ui/use-toast"
 import { useFundWallet, useWallets } from "@/lib/privy/react-auth"
-
-function truncateAddress(address: string) {
-  if (address.length < 10) return address
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
-}
+import { CURRENT_EMBEDDED_WALLET, getWalletDisplay } from "@/lib/wallet/config"
 
 async function resolveOnchainBalance(address: string) {
-  const rpcUrl = liskSepolia.rpcUrls.default.http[0]
+  const rpcUrl = CURRENT_EMBEDDED_WALLET.network.rpcUrl
+  if (!rpcUrl) return null
   const response = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -46,7 +42,7 @@ async function resolveOnchainBalance(address: string) {
   const balance = formatEther(BigInt(balanceHex))
   const parsed = Number.parseFloat(balance)
   if (!Number.isFinite(parsed)) return null
-  return `${parsed.toFixed(4)} ETH`
+  return `${parsed.toFixed(4)} ${CURRENT_EMBEDDED_WALLET.network.nativeAsset}`
 }
 
 export function WalletMenu() {
@@ -66,6 +62,10 @@ export function WalletMenu() {
   }, [wallets])
 
   const walletAddress = embeddedWallet?.address || authUser?.walletAddress || ""
+  const walletDisplay = getWalletDisplay({
+    embeddedWalletAddress: walletAddress,
+    stellarPublicKey: authUser?.stellarPublicKey,
+  })
   const internalBalance = authUser?.availableBalance || 0
   const isBalanceLoading = Boolean(walletAddress) && onchainBalance.address !== walletAddress
 
@@ -94,16 +94,16 @@ export function WalletMenu() {
   }, [walletAddress])
 
   const copyAddress = async () => {
-    if (!walletAddress) return
-    await navigator.clipboard.writeText(walletAddress)
+    if (!walletDisplay.address) return
+    await navigator.clipboard.writeText(walletDisplay.address)
     toast({
       title: "Address copied",
-      description: "Wallet address copied to clipboard.",
+      description: `${walletDisplay.addressLabel} copied to clipboard.`,
     })
   }
 
   const handleOpenWalletView = () => {
-    if (!walletAddress) {
+    if (!walletDisplay.explorerUrl) {
       toast({
         title: "No wallet address",
         description: "Sign in again to initialize your embedded wallet.",
@@ -112,7 +112,7 @@ export function WalletMenu() {
       return
     }
 
-    window.open(`https://sepolia-blockscout.lisk.com/address/${walletAddress}`, "_blank", "noopener,noreferrer")
+    window.open(walletDisplay.explorerUrl, "_blank", "noopener,noreferrer")
     toast({
       title: "Wallet address ready",
       description: "Use your address to receive funds, or continue with Paystack for NGN wallet funding.",
@@ -158,11 +158,14 @@ export function WalletMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className="h-9">
           <Wallet className="mr-2 h-4 w-4" />
-          {walletAddress ? truncateAddress(walletAddress) : "Wallet"}
+          {walletDisplay.shortAddress || "Wallet"}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel>Wallet</DropdownMenuLabel>
+        <DropdownMenuLabel>
+          {walletDisplay.label}
+          <span className="ml-2 font-normal text-muted-foreground">{walletDisplay.networkLabel}</span>
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
         <div className="space-y-2 px-2 py-1.5 text-xs">
@@ -171,7 +174,7 @@ export function WalletMenu() {
             <p className="text-sm font-semibold">{formatNaira(internalBalance)}</p>
           </div>
           <div className="rounded-md border bg-muted/30 p-2">
-            <p className="text-muted-foreground">Onchain balance</p>
+            <p className="text-muted-foreground">{CURRENT_EMBEDDED_WALLET.network.label} balance</p>
             <p className="text-sm font-semibold">
               {!walletAddress ? "Unavailable" : isBalanceLoading ? "Loading..." : onchainBalance.value || "Unavailable"}
             </p>
@@ -180,8 +183,8 @@ export function WalletMenu() {
 
         <DropdownMenuItem onSelect={(event) => event.preventDefault()} className="cursor-default">
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="max-w-[180px] truncate text-xs">{walletAddress || "No wallet address"}</span>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={copyAddress} disabled={!walletAddress}>
+            <span className="max-w-[180px] truncate text-xs">{walletDisplay.address || "No wallet linked"}</span>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={copyAddress} disabled={!walletDisplay.address}>
               <Copy className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -202,7 +205,7 @@ export function WalletMenu() {
         <DropdownMenuItem onSelect={(event) => event.preventDefault()} className="cursor-default">
           <Button
             onClick={handleOpenWalletView}
-            disabled={!walletAddress}
+            disabled={!walletDisplay.explorerUrl}
             variant="outline"
             className="h-8 w-full"
           >

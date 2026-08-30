@@ -1,95 +1,124 @@
-import { NextResponse } from "next/server"
-import { z } from "zod"
-
-import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
-import { parseJsonBody } from "@/lib/api/validation"
-import { buildRateLimitKey, consumeRateLimit, getClientIpAddress, rateLimitExceededResponse } from "@/lib/security/rate-limit"
+import { PaymentInitializeRequestSchema, PaymentInitializeResponseSchema } from "@/lib/api/contracts"
+import { ApiError } from "@/lib/api/errors"
+import { defineRoute } from "@/lib/api/route-handler"
+import { money } from "@/lib/api/serialization"
+import { generateReferenceId } from "@/lib/ids/reference-id"
+import {
+  buildRateLimitKey,
+  consumeRateLimit,
+  getClientIpAddress,
+} from "@/lib/security/rate-limit"
 
 function resolveCallbackUrl(request: Request) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin
   return `${appUrl}/dashboard/investor`
 }
 
-const bodySchema = z
-  .object({
-    amount: z.preprocess(
-      (value) => (value === null || typeof value === "undefined" || value === "" ? undefined : Number(value)),
-      z.number().positive().max(100_000_000).optional(),
-    ),
-    amountNgn: z.preprocess(
-      (value) => (value === null || typeof value === "undefined" || value === "" ? undefined : Number(value)),
-      z.number().positive().max(100_000_000).optional(),
-    ),
-    email: z.string().trim().email().max(254).optional(),
-  })
-  .refine((value) => typeof value.amount === "number" || typeof value.amountNgn === "number", {
-    message: "A valid amount is required.",
-    path: ["amountNgn"],
-  })
-
-export async function POST(request: Request) {
-  const secretKey = process.env.PAYSTACK_SECRET_KEY
-  if (!secretKey) {
-    return NextResponse.json({ message: "Paystack is not configured." }, { status: 500 })
-  }
-
-  try {
-    const authContext = await requireAuthenticatedUser(request)
-    if ("response" in authContext) return authContext.response
+export const POST = defineRoute({
+  operationId: "initializePayment",
+  method: "POST",
+  auth: "authenticated",
+  body: PaymentInitializeRequestSchema,
+  response: PaymentInitializeResponseSchema,
+  successStatus: 201,
+  handler: async ({ request, user, body, setHeader }) => {
+    const secretKey = process.env.PAYSTACK_SECRET_KEY
+    if (!secretKey) {
+      throw new ApiError("NOT_CONFIGURED", { message: "Payment funding is not available right now." })
+    }
 
     const rateLimit = consumeRateLimit({
-      key: buildRateLimitKey("payments:initialize", authContext.user._id.toString(), getClientIpAddress(request)),
+      key: buildRateLimitKey("payments:initialize", String(user._id), getClientIpAddress(request)),
       limit: 10,
       windowMs: 10 * 60 * 1000,
     })
+
     if (!rateLimit.allowed) {
-      return rateLimitExceededResponse(rateLimit)
-    }
-
-    const body = await parseJsonBody(request, bodySchema)
-    if ("response" in body) return body.response
-
-    const amountNgn = body.data.amountNgn ?? body.data.amount ?? 0
-    const providedEmail = body.data.email?.trim().toLowerCase() || ""
-    const fundingEmail = (authContext.user.email || providedEmail || "").trim().toLowerCase()
-    if (!fundingEmail) {
-      return NextResponse.json({ message: "An email is required for Paystack funding." }, { status: 400 })
-    }
-
-    const amountInKobo = Math.round(amountNgn * 100)
-    const reference = `cm_wallet_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-
-    const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        amount: amountInKobo,
-        email: fundingEmail,
-        reference,
-        callback_url: resolveCallbackUrl(request),
-        metadata: {
-          paymentType: "wallet_funding",
-          userId: authContext.user._id.toString(),
-          role: authContext.user.role,
-          amountNgn,
-          payerEmail: fundingEmail,
+      throw new ApiError("RATE_LIMITED", {
+        headers: {
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": String(rateLimit.resetAt),
         },
-      }),
-    })
-
-    const payload = await paystackResponse.json()
-    if (!paystackResponse.ok || payload?.status === false) {
-      const message = payload?.message || "Failed to initialize payment."
-      return NextResponse.json({ message }, { status: 500 })
+      })
     }
 
-    const response = NextResponse.json(payload)
-    return finalizeAuthenticatedResponse(response, authContext)
-  } catch (error) {
-    console.error("PAYSTACK_INITIALIZE_ERROR", error)
-    return NextResponse.json({ message: "Failed to initialize payment." }, { status: 500 })
-  }
-}
+    setHeader("X-RateLimit-Remaining", String(rateLimit.remaining))
+    setHeader("X-RateLimit-Reset", String(rateLimit.resetAt))
+
+    const fundingEmail = (
+      (user.email as string) ||
+      body.email ||
+      ""
+    )
+      .trim()
+      .toLowerCase()
+
+    if (!fundingEmail) {
+      throw ApiError.validation(
+        [{ path: "email", message: "An email is required to fund your wallet." }],
+        "An email is required for Paystack funding.",
+      )
+    }
+
+    const reference = generateReferenceId({ prefix: "cm_wallet" })
+
+    let payload: {
+      status?: boolean
+      data?: { authorization_url?: string; access_code?: string; reference?: string }
+    }
+    let upstreamOk: boolean
+
+    try {
+      const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${secretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: Math.round(body.amountNgn * 100),
+          email: fundingEmail,
+          reference,
+          callback_url: resolveCallbackUrl(request),
+          metadata: {
+            paymentType: "wallet_funding",
+            userId: String(user._id),
+            role: user.role,
+            amountNgn: body.amountNgn,
+            payerEmail: fundingEmail,
+          },
+        }),
+      })
+
+      upstreamOk = paystackResponse.ok
+      payload = await paystackResponse.json()
+    } catch (error) {
+      // Network-level failure: the provider never answered.
+      throw new ApiError("UPSTREAM_UNAVAILABLE", {
+        message: "We could not reach the payment provider. Please try again shortly.",
+        cause: error,
+      })
+    }
+
+    if (!upstreamOk || payload?.status === false || !payload?.data?.authorization_url) {
+      // The provider's message is logged but not returned: it can echo request
+      // details and provider-internal state.
+      throw new ApiError("UPSTREAM_PROVIDER_ERROR", {
+        message: "The payment provider could not start this transaction. Please try again.",
+        logContext: { reference, providerStatus: payload?.status },
+        cause: payload,
+      })
+    }
+
+    return {
+      success: true as const,
+      payment: {
+        authorizationUrl: payload.data.authorization_url,
+        accessCode: payload.data.access_code ?? "",
+        reference: payload.data.reference ?? reference,
+        amount: money(body.amountNgn),
+      },
+    }
+  },
+})

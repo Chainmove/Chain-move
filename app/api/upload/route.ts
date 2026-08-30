@@ -4,24 +4,38 @@ import { z } from "zod"
 
 import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
 import { parseSearchParams } from "@/lib/api/validation"
+import dbConnect from "@/lib/dbConnect"
 import {
   createKycDocumentReference,
   encryptKycDocument,
 } from "@/lib/security/kyc-documents"
+import { validateKycFile, KYC_ALLOWED_MIME_TYPES, KYC_MAX_FILE_SIZE } from "@/lib/security/kyc-file-validation"
+import { runScanHook } from "@/lib/security/kyc-scanning"
+import { computeRetentionExpiry } from "@/lib/security/kyc-retention"
+import { logAuditEvent } from "@/lib/security/audit-log"
 import {
   buildRateLimitKey,
   consumeRateLimit,
   getClientIpAddress,
   rateLimitExceededResponse,
 } from "@/lib/security/rate-limit"
+import {
+  computeChecksumSha256,
+  FLEET_DOCUMENT_TYPES,
+  isPrivateFleetDocumentBlobUrl,
+} from "@/lib/security/fleet-documents"
+import KycDocument from "@/models/KycDocument"
+import FleetDocumentUpload from "@/models/FleetDocumentUpload"
+import Vehicle from "@/models/Vehicle"
 
-const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
-const KYC_ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"])
 const VEHICLE_ALLOWED_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
 
 const querySchema = z.object({
   filename: z.string().trim().min(1).max(200),
   scope: z.enum(["kyc", "vehicle"]),
+  documentType: z.enum(["identity", "proof_of_address", "bvn", "nin", "other"]).optional(),
+  fleetDocumentType: z.enum(FLEET_DOCUMENT_TYPES).optional(),
+  vehicleId: z.string().regex(/^[a-f\d]{24}$/i).optional(),
 })
 
 function sanitizeFilename(filename: string) {
@@ -63,12 +77,12 @@ export async function POST(request: Request) {
       return rateLimitExceededResponse(rateLimit)
     }
 
-    const allowedContentTypes = scope === "vehicle" ? VEHICLE_ALLOWED_CONTENT_TYPES : KYC_ALLOWED_CONTENT_TYPES
+    const allowedContentTypes = scope === "vehicle" ? VEHICLE_ALLOWED_CONTENT_TYPES : KYC_ALLOWED_MIME_TYPES
     if (!allowedContentTypes.has(contentType)) {
       return NextResponse.json({ message: "Unsupported file type." }, { status: 400 })
     }
 
-    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_SIZE_BYTES) {
+    if (Number.isFinite(contentLength) && contentLength > KYC_MAX_FILE_SIZE) {
       return NextResponse.json({ message: "File is too large." }, { status: 413 })
     }
 
@@ -77,11 +91,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "No file body provided." }, { status: 400 })
     }
 
-    if (fileBuffer.length > MAX_UPLOAD_SIZE_BYTES) {
+    if (fileBuffer.length > KYC_MAX_FILE_SIZE) {
       return NextResponse.json({ message: "File is too large." }, { status: 413 })
     }
 
     if (scope === "kyc") {
+      const validation = validateKycFile(fileBuffer, contentType, filename)
+      if (!validation.valid) {
+        await logAuditEvent({
+          actor: authContext.user,
+          action: "kyc.document.upload.rejected",
+          targetType: "user",
+          targetId: authContext.user._id?.toString(),
+          status: "failure",
+          ipAddress: getClientIpAddress(request),
+          metadata: { filename, errors: validation.errors },
+        })
+        return NextResponse.json(
+          { message: "File validation failed.", errors: validation.errors },
+          { status: 400 },
+        )
+      }
+
+      await dbConnect()
+
       const encryptedPayload = encryptKycDocument(fileBuffer, {
         contentType,
         originalFilename: filename,
@@ -89,18 +122,139 @@ export async function POST(request: Request) {
 
       const storageKey = `kyc/${authContext.user._id.toString()}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${filename}.json`
       const blob = await put(storageKey, encryptedPayload, {
-        access: "public",
+        access: "private",
         addRandomSuffix: false,
         contentType: "application/json",
       })
 
+      if (!blob.url.includes(".private.blob.vercel-storage.com/")) {
+        throw new Error("KYC uploads require a private Blob store.")
+      }
+
+      const encryptedRef = createKycDocumentReference({
+        url: blob.url,
+        originalFilename: filename,
+        contentType,
+      })
+
+      const retentionExpiry = computeRetentionExpiry(new Date())
+
+      const documentType = query.data.documentType || "other"
+
+      const kycDoc = await KycDocument.create({
+        userId: authContext.user._id,
+        documentType,
+        status: "pending",
+        storageKey,
+        blobUrl: blob.url,
+        encryptedRef,
+        originalFilename: filename,
+        sanitizedFilename: filename,
+        contentType,
+        fileSize: fileBuffer.length,
+        checksumSha256: validation.checksumSha256,
+        encryptionKeyVersion: "kyc-v1",
+        scanVerdict: "pending",
+        retentionExpiresAt: retentionExpiry,
+        legalHold: false,
+        accessCount: 0,
+      })
+
+      await runScanHook(kycDoc._id.toString(), fileBuffer, {
+        filename,
+        contentType,
+        checksumSha256: validation.checksumSha256,
+      })
+
+      await logAuditEvent({
+        actor: authContext.user,
+        action: "kyc.document.upload",
+        targetType: "kyc_document",
+        targetId: kycDoc._id.toString(),
+        metadata: {
+          filename,
+          documentType,
+          contentType,
+          fileSize: fileBuffer.length,
+          checksumSha256: validation.checksumSha256,
+        },
+      })
+
       const response = NextResponse.json({
         success: true,
-        documentRef: createKycDocumentReference({
-          url: blob.url,
-          originalFilename: filename,
+        documentId: kycDoc._id.toString(),
+        documentRef: encryptedRef,
+        status: kycDoc.status,
+      })
+
+      return finalizeAuthenticatedResponse(response, authContext)
+    }
+
+    if (query.data.fleetDocumentType) {
+      const vehicleId = query.data.vehicleId
+      if (!vehicleId) {
+        return NextResponse.json(
+          { message: "vehicleId is required for fleet document uploads." },
+          { status: 400 },
+        )
+      }
+
+      await dbConnect()
+
+      const vehicleExists = await Vehicle.exists({ _id: vehicleId })
+      if (!vehicleExists) {
+        return NextResponse.json({ message: "Vehicle not found." }, { status: 404 })
+      }
+
+      const fleetDocumentType = query.data.fleetDocumentType
+      const checksumSha256 = computeChecksumSha256(fileBuffer)
+      const storageKey = `fleet-documents/${vehicleId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${filename}`
+
+      const blob = await put(storageKey, fileBuffer, {
+        access: "private",
+        addRandomSuffix: false,
+        contentType,
+      })
+
+      if (!isPrivateFleetDocumentBlobUrl(blob.url)) {
+        throw new Error("Fleet document uploads require a private Blob store.")
+      }
+
+      const retentionExpiresAt = computeRetentionExpiry(new Date())
+
+      const fleetDocument = await FleetDocumentUpload.create({
+        vehicleId,
+        uploadedBy: authContext.user._id,
+        documentType: fleetDocumentType,
+        status: "active",
+        storageKey,
+        blobUrl: blob.url,
+        originalFilename: filename,
+        contentType,
+        fileSize: fileBuffer.length,
+        checksumSha256,
+        retentionExpiresAt,
+        accessCount: 0,
+      })
+
+      await logAuditEvent({
+        actor: authContext.user,
+        action: "fleet.document.upload",
+        targetType: "fleet_document",
+        targetId: fleetDocument._id.toString(),
+        metadata: {
+          vehicleId,
+          documentType: fleetDocumentType,
+          filename,
           contentType,
-        }),
+          fileSize: fileBuffer.length,
+          checksumSha256,
+        },
+      })
+
+      const response = NextResponse.json({
+        success: true,
+        documentId: fleetDocument._id.toString(),
       })
 
       return finalizeAuthenticatedResponse(response, authContext)

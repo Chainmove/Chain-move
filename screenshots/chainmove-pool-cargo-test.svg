@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="520" viewBox="0 0 1160 520" role="img" aria-labelledby="title desc">
+  <title id="title">cargo test passing for ChainMove pool contract</title>
+  <desc id="desc">Terminal screenshot showing cargo test passing with four tests.</desc>
+  <rect width="1160" height="520" fill="#0f172a"/>
+  <rect x="24" y="24" width="1112" height="472" rx="8" fill="#111827" stroke="#334155"/>
+  <circle cx="52" cy="52" r="7" fill="#ef4444"/>
+  <circle cx="76" cy="52" r="7" fill="#f59e0b"/>
+  <circle cx="100" cy="52" r="7" fill="#22c55e"/>
+  <text x="36" y="96" fill="#e5e7eb" font-family="monospace" font-size="24">/workspaces/Chain-move $ cargo test</text>
+  <text x="36" y="142" fill="#94a3b8" font-family="monospace" font-size="22">Compiling chainmove-pool v0.1.0 (/workspaces/Chain-move/contracts/chainmove-pool)</text>
+  <text x="36" y="178" fill="#94a3b8" font-family="monospace" font-size="22">Finished `test` profile [unoptimized + debuginfo] target(s) in 1.43s</text>
+  <text x="36" y="232" fill="#e5e7eb" font-family="monospace" font-size="22">running 4 tests</text>
+  <text x="36" y="270" fill="#86efac" font-family="monospace" font-size="22">test test::creates_pool_and_reads_pool_data ... ok</text>
+  <text x="36" y="306" fill="#86efac" font-family="monospace" font-size="22">test test::records_investment_and_reads_investor_position ... ok</text>
+  <text x="36" y="342" fill="#86efac" font-family="monospace" font-size="22">test test::rejects_invalid_input ... ok</text>
+  <text x="36" y="378" fill="#86efac" font-family="monospace" font-size="22">test test::records_repayment_against_pool_and_position ... ok</text>
+  <text x="36" y="432" fill="#e5e7eb" font-family="monospace" font-size="22">test result: ok. 4 passed; 0 failed; finished in 0.12s</text>
+</svg>
+

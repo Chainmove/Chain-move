@@ -26,6 +26,7 @@ let mockCursorStore: Record<string, string> = {}
 
 /** In-memory event store that replaces StellarIndexedEvent model calls. */
 let mockEventStore: Record<string, unknown> = {}
+const originalMockStellar = process.env.ENABLE_MOCK_STELLAR
 
 // ---------------------------------------------------------------------------
 // Mock the DB models via vi.mock
@@ -96,12 +97,18 @@ function makeFailedHorizonResponse(status = 500, statusText = "Internal Server E
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
+  process.env.ENABLE_MOCK_STELLAR = "true"
   mockCursorStore = {}
   mockEventStore = {}
   vi.restoreAllMocks()
 })
 
 afterEach(() => {
+  if (originalMockStellar === undefined) {
+    delete process.env.ENABLE_MOCK_STELLAR
+  } else {
+    process.env.ENABLE_MOCK_STELLAR = originalMockStellar
+  }
   vi.unstubAllGlobals()
 })
 

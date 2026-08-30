@@ -1,15 +1,34 @@
 import mongoose, { type ClientSession } from "mongoose"
 
 import dbConnect from "@/lib/dbConnect"
+import { isRepayableState } from "@/lib/contracts/state-machine"
+import {
+  buildRepaymentSchedule,
+  clampToNonNegative,
+  type DriverRepaymentScheduleItem,
+  type RepaymentScheduleStatus,
+} from "@/lib/contracts/repayment-schedule"
+import { generateReferenceId } from "@/lib/ids/reference-id"
+import { transitionHirePurchaseContract } from "@/lib/services/contract-transition.service"
+import { applyDriverPayment as engineApplyPayment } from "@/lib/repayments/repayment-engine.service"
 import DriverPayment from "@/models/DriverPayment"
-import HirePurchaseContract from "@/models/HirePurchaseContract"
+import HirePurchaseContract, { HirePurchaseContractStatus } from "@/models/HirePurchaseContract"
 import InvestorCredit from "@/models/InvestorCredit"
 import PoolInvestment from "@/models/PoolInvestment"
 import Transaction from "@/models/Transaction"
 import User from "@/models/User"
 
-type ContractStatus = "ACTIVE" | "COMPLETED" | "DEFAULTED"
+type ContractStatus = HirePurchaseContractStatus
 type DriverPaymentStatus = "PENDING" | "CONFIRMED" | "FAILED"
+
+export type { RepaymentScheduleStatus, DriverRepaymentScheduleItem }
+
+export interface DriverArrearsSummary {
+  status: "CURRENT" | "LATE" | "COMPLETED"
+  overdueInstallments: number
+  arrearsAmountNgn: number
+  oldestOverdueDate: string | null
+}
 
 export interface DriverContractSnapshot {
   id: string
@@ -30,6 +49,9 @@ export interface DriverContractSnapshot {
   progressRatio: number
   nextDueDate: string | null
   nextPaymentAmountNgn: number
+  schedule: DriverRepaymentScheduleItem[]
+  arrears: DriverArrearsSummary
+  overpaymentNgn: number
 }
 
 export interface DriverPaymentSnapshot {
@@ -44,6 +66,7 @@ export interface DriverPaymentSnapshot {
   status: DriverPaymentStatus
   confirmedAt: string | null
   failedReason: string | null
+  overpaymentNgn: number
   createdAt: string
 }
 
@@ -99,11 +122,6 @@ function toIsoDate(value: Date | string | null | undefined) {
   return date.toISOString()
 }
 
-function clampToNonNegative(value: number) {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(value, 0)
-}
-
 function computeRemainingBalance(totalPayableNgn: number, totalPaidNgn: number) {
   return Math.max(totalPayableNgn - totalPaidNgn, 0)
 }
@@ -111,6 +129,21 @@ function computeRemainingBalance(totalPayableNgn: number, totalPaidNgn: number) 
 function computeProgressRatio(totalPayableNgn: number, totalPaidNgn: number) {
   if (!Number.isFinite(totalPayableNgn) || totalPayableNgn <= 0) return 0
   return Math.min(Math.max(totalPaidNgn / totalPayableNgn, 0), 1)
+}
+
+function computeArrearsSummary(schedule: DriverRepaymentScheduleItem[], contractStatus: ContractStatus): DriverArrearsSummary {
+  if (!isRepayableState(contractStatus)) {
+    return { status: "COMPLETED", overdueInstallments: 0, arrearsAmountNgn: 0, oldestOverdueDate: null }
+  }
+
+  const overdueRows = schedule.filter((item) => item.status === "LATE" || item.status === "PARTIAL")
+  const arrearsAmountNgn = overdueRows.reduce((sum, item) => sum + item.remainingAmountNgn, 0)
+  return {
+    status: overdueRows.length > 0 ? "LATE" : "CURRENT",
+    overdueInstallments: overdueRows.length,
+    arrearsAmountNgn,
+    oldestOverdueDate: overdueRows[0]?.dueDate || null,
+  }
 }
 
 function calculateNextDueDate(contract: {
@@ -139,6 +172,9 @@ function mapContractSnapshot(contract: any): DriverContractSnapshot {
   const totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0))
   const remainingBalanceNgn = computeRemainingBalance(totalPayableNgn, totalPaidNgn)
   const weeklyPaymentNgn = clampToNonNegative(Number(contract.weeklyPaymentNgn || 0))
+  const overpaymentNgn = clampToNonNegative(totalPaidNgn - totalPayableNgn)
+  const schedule = buildRepaymentSchedule(contract)
+  const arrears = computeArrearsSummary(schedule, contract.status)
 
   return {
     id: contract._id.toString(),
@@ -159,6 +195,9 @@ function mapContractSnapshot(contract: any): DriverContractSnapshot {
     progressRatio: computeProgressRatio(totalPayableNgn, totalPaidNgn),
     nextDueDate: toIsoDate(contract.nextDueDate),
     nextPaymentAmountNgn: Math.min(weeklyPaymentNgn, remainingBalanceNgn),
+    schedule,
+    arrears,
+    overpaymentNgn,
   }
 }
 
@@ -175,12 +214,22 @@ function mapDriverPaymentSnapshot(payment: any): DriverPaymentSnapshot {
     status: payment.status,
     confirmedAt: toIsoDate(payment.confirmedAt),
     failedReason: payment.failedReason || null,
+    overpaymentNgn: clampToNonNegative(Number(payment.amountNgn || 0) - Number(payment.appliedAmountNgn || 0)),
     createdAt: toIsoDate(payment.createdAt) || new Date(0).toISOString(),
   }
 }
 
+const MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES = 3
+
 function buildDriverPaymentReference() {
-  return `cm_driver_repay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  return generateReferenceId({ prefix: "cm_driver_repay" })
+}
+
+/** True when a Mongo duplicate-key error was raised by the unique `paystackRef` index specifically. */
+function isPaystackRefCollision(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const candidate = error as { code?: number; keyPattern?: Record<string, unknown> }
+  return candidate.code === 11000 && Boolean(candidate.keyPattern && "paystackRef" in candidate.keyPattern)
 }
 
 async function runWithOptionalSession<T>(
@@ -223,7 +272,7 @@ export async function getDriverContract(driverUserId: string): Promise<DriverCon
 
   const activeContract = await HirePurchaseContract.findOne({
     driverUserId: driverObjectId,
-    status: "ACTIVE",
+    status: { $in: ["ACTIVE", "DELINQUENT", "RESTRUCTURED"] },
   })
     .sort({ createdAt: -1 })
     .lean()
@@ -234,7 +283,7 @@ export async function getDriverContract(driverUserId: string): Promise<DriverCon
 
   const latestHistoricalContract = await HirePurchaseContract.findOne({
     driverUserId: driverObjectId,
-    status: { $in: ["COMPLETED", "DEFAULTED"] },
+    status: { $in: ["COMPLETED", "REPOSSESSED", "CANCELLED", "CLOSED"] },
   })
     .sort({ updatedAt: -1 })
     .lean()
@@ -302,7 +351,7 @@ export async function createDriverPayment({
     throw new Error("Contract not found.")
   }
 
-  if (contract.status !== "ACTIVE") {
+  if (!isRepayableState(contract.status)) {
     throw new Error("This hire-purchase contract is not active.")
   }
 
@@ -315,19 +364,49 @@ export async function createDriverPayment({
     throw new Error(`Amount exceeds remaining balance of NGN ${remainingBalanceNgn.toLocaleString("en-NG")}.`)
   }
 
-  const payment = await DriverPayment.create({
+  const callerSuppliedReference = paystackRef?.trim()
+  const basePaymentFields = {
     contractId: contract._id,
     driverUserId: driverObjectId,
     amountNgn: normalizedAmountNgn,
     appliedAmountNgn: 0,
-    method: "PAYSTACK",
-    paystackRef: paystackRef || buildDriverPaymentReference(),
+    method: "PAYSTACK" as const,
     payerEmail: payerEmail?.trim().toLowerCase() || undefined,
     metadata,
-    status: "PENDING",
-  })
+    status: "PENDING" as const,
+  }
 
-  return mapDriverPaymentSnapshot(payment)
+  if (callerSuppliedReference) {
+    // A caller-supplied reference is the caller's own idempotency key — a
+    // collision here is a genuine conflict, not something to retry past.
+    const payment = await DriverPayment.create({ ...basePaymentFields, paystackRef: callerSuppliedReference })
+    return mapDriverPaymentSnapshot(payment)
+  }
+
+  for (let attempt = 1; attempt <= MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES; attempt++) {
+    const generatedReference = buildDriverPaymentReference()
+    try {
+      const payment = await DriverPayment.create({ ...basePaymentFields, paystackRef: generatedReference })
+      return mapDriverPaymentSnapshot(payment)
+    } catch (error) {
+      if (!isPaystackRefCollision(error)) throw error
+      if (attempt === MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES) {
+        throw new Error(
+          `Failed to generate a unique payment reference after ${MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES} attempts.`,
+        )
+      }
+      console.warn("DRIVER_PAYMENT_REFERENCE_COLLISION_RETRY", {
+        attempt,
+        generatedReference,
+        contractId,
+        driverUserId,
+      })
+    }
+  }
+
+  throw new Error(
+    `Failed to generate a unique payment reference after ${MAX_PAYSTACK_REFERENCE_COLLISION_RETRIES} attempts.`,
+  )
 }
 
 export async function createDriverTransferPayment({
@@ -367,7 +446,7 @@ export async function createDriverTransferPayment({
     throw new Error("Contract not found.")
   }
 
-  if (contract.status !== "ACTIVE") {
+  if (!isRepayableState(contract.status)) {
     throw new Error("This hire-purchase contract is not active.")
   }
 
@@ -651,7 +730,7 @@ export async function confirmDriverPayment(
       throw new Error(payment.failedReason || "This payment has already failed.")
     }
 
-    if (contract.status !== "ACTIVE") {
+    if (!isRepayableState(contract.status)) {
       throw new Error("This contract is not active.")
     }
 
@@ -668,27 +747,21 @@ export async function confirmDriverPayment(
       throw new Error("This contract has already been settled.")
     }
 
-    const appliedAmountNgn = Math.min(verifiedAmountNgn, remainingBeforeNgn)
-    const unappliedAmountNgn = Math.max(verifiedAmountNgn - appliedAmountNgn, 0)
+    // Delegate to the allocation engine for a transparent, deterministic breakdown.
+    // The engine updates totalPaidNgn, nextDueDate, and creates the PaymentAllocation
+    // record atomically inside the same session.
+    const engineResult = await engineApplyPayment(
+      normalizedReference,
+      { gatewayRef: normalizedReference, verifiedAmountNgn, channel: options.channel, metadata: options.metadata },
+      session,
+    )
 
-    payment.amountNgn = verifiedAmountNgn
-    payment.appliedAmountNgn = appliedAmountNgn
-    payment.status = "CONFIRMED"
-    payment.confirmedAt = new Date()
-    payment.failedReason = undefined
-    payment.metadata = {
-      ...(payment.metadata || {}),
-      ...(options.metadata || {}),
-      channel: options.channel || (payment.metadata as Record<string, unknown> | undefined)?.channel || null,
-      unappliedAmountNgn,
-    }
-    await payment.save({ session })
+    // Re-load the contract so mapContractSnapshot reflects the engine's writes.
+    const updatedContract = await HirePurchaseContract.findById(payment.contractId).session(session)
+    if (!updatedContract) throw new Error("Contract disappeared after engine write.")
 
-    contract.totalPaidNgn = clampToNonNegative(Number(contract.totalPaidNgn || 0) + appliedAmountNgn)
-    const remainingAfterNgn = computeRemainingBalance(contract.totalPayableNgn, contract.totalPaidNgn)
-    contract.status = remainingAfterNgn <= 0 ? "COMPLETED" : "ACTIVE"
-    contract.nextDueDate = contract.status === "COMPLETED" ? null : calculateNextDueDate(contract)
-    await contract.save({ session })
+    const appliedAmountNgn = engineResult.allocation.acceptedAmountNgn
+    const unappliedAmountNgn = engineResult.allocation.excessAmountNgn
 
     const existingRepaymentTx = await Transaction.findOne({
       gatewayReference: normalizedReference,
@@ -707,13 +780,14 @@ export async function confirmDriverPayment(
             currency: "NGN",
             method: "paystack",
             status: "Completed",
-            description: `Hire-purchase repayment for ${contract.vehicleDisplayName}`,
-            relatedId: contract._id.toString(),
+            description: `Hire-purchase repayment for ${updatedContract.vehicleDisplayName}`,
+            relatedId: updatedContract._id.toString(),
             gatewayReference: normalizedReference,
             metadata: {
               source: "driver_repayment",
               paymentId: payment._id.toString(),
               unappliedAmountNgn,
+              allocationBreakdown: engineResult.allocation,
             },
           },
         ],
@@ -721,43 +795,16 @@ export async function confirmDriverPayment(
       )
     }
 
-    if (unappliedAmountNgn > 0) {
-      await User.updateOne(
-        { _id: payment.driverUserId },
-        { $inc: { availableBalance: unappliedAmountNgn } },
-        { session },
-      )
-
-      await Transaction.create(
-        [
-          {
-            userId: payment.driverUserId,
-            userType: "driver",
-            type: "wallet_funding",
-            amount: unappliedAmountNgn,
-            currency: "NGN",
-            method: "system",
-            status: "Completed",
-            description: "Unapplied repayment amount credited to internal wallet.",
-            relatedId: contract._id.toString(),
-            gatewayReference: `${normalizedReference}_unapplied`,
-            metadata: {
-              source: "driver_repayment",
-              paymentId: payment._id.toString(),
-            },
-          },
-        ],
-        { session },
-      )
-    }
+    // Excess/unapplied amount is already handled by the engine (wallet credit +
+    // wallet_funding transaction). Skip duplicating it here.
 
     const distribution = await distributePaymentToInvestors(payment._id.toString(), session)
     await session.commitTransaction()
 
     return {
-      alreadyProcessed: false,
+      alreadyProcessed: engineResult.alreadyProcessed,
       payment: mapDriverPaymentSnapshot(payment),
-      contract: mapContractSnapshot(contract),
+      contract: mapContractSnapshot(updatedContract),
       distribution,
     }
   } catch (error) {

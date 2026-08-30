@@ -6,6 +6,7 @@ import ProcessedGatewayEvent, { type GatewayPaymentType } from "@/models/Process
 import Transaction from "@/models/Transaction"
 import User from "@/models/User"
 import { logAuditEvent } from "@/lib/security/audit-log"
+import { initiateSettlement, transitionSettlementState } from "@/lib/settlement/settlement-service"
 
 type ProcessedVia = "verify" | "webhook"
 

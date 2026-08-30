@@ -1,22 +1,16 @@
 import { NextResponse } from "next/server"
 
 import dbConnect from "@/lib/dbConnect"
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { withSessionRefresh } from "@/lib/auth/current-user"
+import { authorizeRequest } from "@/lib/authorization/route"
+import { csvEscape } from "@/lib/exports/csv-stream"
 import User from "@/models/User"
-
-function csvEscape(value: unknown): string {
-  const raw = value == null ? "" : String(value)
-  if (raw.includes(",") || raw.includes("\"") || raw.includes("\n")) {
-    return `"${raw.replace(/"/g, "\"\"")}"`
-  }
-  return raw
-}
 
 export async function GET(request: Request) {
   try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    if (user.role !== "admin") return NextResponse.json({ message: "Forbidden" }, { status: 403 })
+    const auth = await authorizeRequest(request, "admin:report", { type: "report" })
+    if ("response" in auth) return auth.response
+    const { user, shouldRefreshSession } = auth
 
     await dbConnect()
 

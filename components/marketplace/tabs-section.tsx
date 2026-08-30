@@ -30,13 +30,13 @@ export function TabsSection() {
 			</TabsList>
 
 			<TabsContent value="featured">
-				<FeaturedVehicles />
+				<FeaturedVehicles {...({} as any)} />
 			</TabsContent>
 			<TabsContent value="categories">
-				<VehicleCategories />
+				<VehicleCategories {...({} as any)} />
 			</TabsContent>
 			<TabsContent value="search">
-				<BrowseAllVehicles />
+				<BrowseAllVehicles {...({} as any)} />
 			</TabsContent>
 		</Tabs>
 	);

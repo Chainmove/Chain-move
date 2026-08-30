@@ -3,14 +3,6 @@
 import { useState, useEffect, useCallback } from "react"
 
 export interface AuthUser {
-  notifications?: Array<{
-    id: string
-    title: string
-    message: string
-    read: boolean
-    timestamp: string
-    link?: string
-  }>
   id: string
   name?: string
   fullName?: string
@@ -21,7 +13,7 @@ export interface AuthUser {
   bio?: string | null
   role?: string
   walletAddress?: string
-  stellarPublicKey?: string | null
+  stellarPublicKey?: string
   availableBalance?: number
   totalInvested?: number
   totalReturns?: number

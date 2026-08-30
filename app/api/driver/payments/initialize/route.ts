@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { withSessionRefresh } from "@/lib/auth/current-user"
+import { authorizeRequest } from "@/lib/authorization/route"
+import dbConnect from "@/lib/dbConnect"
 import { createDriverPayment, markDriverPaymentFailed } from "@/lib/services/driver-contracts.service"
+import HirePurchaseContract from "@/models/HirePurchaseContract"
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -19,24 +22,22 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
-
-    if (user.role !== "driver") {
-      return NextResponse.json({ message: "Only drivers can initialize repayments." }, { status: 403 })
-    }
-
+    await dbConnect()
     const body = await request.json().catch(() => ({}))
     const contractId = typeof body.contractId === "string" ? body.contractId.trim() : ""
     const amountNgn = Number(body.amountNgn ?? body.amount)
-    const providedEmail = typeof body.email === "string" ? body.email.trim().toLowerCase() : ""
-    const payerEmail = (providedEmail || user.email || "").trim().toLowerCase()
 
     if (!contractId) {
       return NextResponse.json({ message: "Contract ID is required." }, { status: 400 })
     }
+
+    const contract = await HirePurchaseContract.findById(contractId).select("driverUserId status").lean()
+    const auth = await authorizeRequest(request, "repayment:record", {
+      type: "repayment", ownerId: contract?.driverUserId?.toString(), state: contract?.status, exists: Boolean(contract),
+    })
+    if ("response" in auth) return auth.response
+    const { user, shouldRefreshSession } = auth
+    const payerEmail = (user.email || "").trim().toLowerCase()
 
     if (!Number.isFinite(amountNgn) || amountNgn <= 0) {
       return NextResponse.json({ message: "A valid amount is required." }, { status: 400 })

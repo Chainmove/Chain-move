@@ -1,13 +1,37 @@
 import mongoose, { Document, Schema } from "mongoose"
 
 export type HirePurchaseAssetType = "SHUTTLE" | "KEKE"
-export type HirePurchaseContractStatus = "ACTIVE" | "COMPLETED" | "DEFAULTED"
+
+export type HirePurchaseContractStatus =
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "VEHICLE_ASSIGNED"
+  | "ACTIVE"
+  | "DELINQUENT"
+  | "RESTRUCTURED"
+  | "COMPLETED"
+  | "REPOSSESSED"
+  | "CANCELLED"
+  | "CLOSED"
+
+export type HirePurchaseContractTransitionActor = "driver" | "admin" | "system"
+
+export interface IHirePurchaseContractTransition {
+  fromState: HirePurchaseContractStatus | null
+  toState: HirePurchaseContractStatus
+  actorType: HirePurchaseContractTransitionActor
+  actorUserId?: Schema.Types.ObjectId
+  reason: string
+  metadata?: Record<string, unknown>
+  timestamp: Date
+}
 
 export interface IHirePurchaseContract extends Document {
   driverUserId: Schema.Types.ObjectId
   poolId: Schema.Types.ObjectId
   assetType: HirePurchaseAssetType
   vehicleDisplayName: string
+  vehicleId?: Schema.Types.ObjectId
   principalNgn: number
   depositNgn: number
   totalPayableNgn: number
@@ -16,11 +40,33 @@ export interface IHirePurchaseContract extends Document {
   weeklyPaymentNgn: number
   startDate: Date
   status: HirePurchaseContractStatus
+  version: number
+  consentAcceptanceId: string
+  acceptedDocumentSetHash: string
+  acceptedDocumentVersionIds: Schema.Types.ObjectId[]
+  timeline: IHirePurchaseContractTransition[]
   totalPaidNgn: number
   nextDueDate: Date | null
   createdAt: Date
   updatedAt: Date
 }
+
+const HirePurchaseContractTransitionSchema = new Schema<IHirePurchaseContractTransition>(
+  {
+    fromState: { type: String, default: null },
+    toState: { type: String, required: true },
+    actorType: {
+      type: String,
+      enum: ["driver", "admin", "system"],
+      required: true,
+    },
+    actorUserId: { type: Schema.Types.ObjectId, ref: "User" },
+    reason: { type: String, required: true },
+    metadata: { type: Schema.Types.Mixed },
+    timestamp: { type: Date, default: Date.now },
+  },
+  { _id: false },
+)
 
 const HirePurchaseContractSchema: Schema = new Schema(
   {
@@ -45,6 +91,10 @@ const HirePurchaseContractSchema: Schema = new Schema(
       type: String,
       required: true,
       trim: true,
+    },
+    vehicleId: {
+      type: Schema.Types.ObjectId,
+      ref: "Vehicle",
     },
     principalNgn: {
       type: Number,
@@ -81,9 +131,42 @@ const HirePurchaseContractSchema: Schema = new Schema(
     },
     status: {
       type: String,
-      enum: ["ACTIVE", "COMPLETED", "DEFAULTED"],
-      default: "ACTIVE",
+      enum: [
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "VEHICLE_ASSIGNED",
+        "ACTIVE",
+        "DELINQUENT",
+        "RESTRUCTURED",
+        "COMPLETED",
+        "REPOSSESSED",
+        "CANCELLED",
+        "CLOSED",
+      ],
+      default: "PENDING_APPROVAL",
       index: true,
+    },
+    version: {
+      type: Number,
+      default: 0,
+    },
+    consentAcceptanceId: {
+      type: String,
+      required: false,
+      trim: true,
+      index: true,
+    },
+    acceptedDocumentSetHash: {
+      type: String,
+      required: false,
+      trim: true,
+      lowercase: true,
+      match: /^[a-f0-9]{64}$/,
+    },
+    acceptedDocumentVersionIds: [{ type: Schema.Types.ObjectId, ref: "LegalDocumentVersion" }],
+    timeline: {
+      type: [HirePurchaseContractTransitionSchema],
+      default: [],
     },
     totalPaidNgn: {
       type: Number,
@@ -100,6 +183,8 @@ const HirePurchaseContractSchema: Schema = new Schema(
 
 HirePurchaseContractSchema.index({ driverUserId: 1, status: 1, createdAt: -1 })
 HirePurchaseContractSchema.index({ poolId: 1, status: 1 })
+HirePurchaseContractSchema.index({ vehicleId: 1 }, { sparse: true })
+HirePurchaseContractSchema.index({ consentAcceptanceId: 1 }, { sparse: true })
 
-export default mongoose.models.HirePurchaseContract ||
-  mongoose.model<IHirePurchaseContract>("HirePurchaseContract", HirePurchaseContractSchema)
+export default (mongoose.models.HirePurchaseContract ||
+  mongoose.model<IHirePurchaseContract>("HirePurchaseContract", HirePurchaseContractSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

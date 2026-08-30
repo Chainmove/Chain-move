@@ -1,14 +1,68 @@
+import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { CalendarClock, Save } from "lucide-react"
 
 import { PageHeader } from "@/components/dashboard/admin/page-header"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import dbConnect from "@/lib/dbConnect"
 import PlatformSetting from "@/models/PlatformSetting"
 import { requireAdminAccess } from "@/src/server/admin/require-admin"
+import { listApprovalRequests, decideApprovalRequest, cancelApprovalRequest } from "@/lib/approvals/service"
 
 export const dynamic = "force-dynamic"
+
+async function approveApprovalAction(formData: FormData) {
+  "use server"
+  const admin = await requireAdminAccess()
+  const requestId = String(formData.get("requestId") || "")
+  if (!requestId) return
+  try {
+    await decideApprovalRequest({ requestId, decision: "approve", approver: { id: admin.id, role: "admin" } })
+  } catch {
+    // Swallowed: the queue re-renders below and reflects the request's actual
+    // resulting status (e.g. still "pending" if this failed self-approval,
+    // staleness, or a conflicting concurrent decision).
+  }
+  revalidatePath("/dashboard/admin/governance")
+}
+
+async function rejectApprovalAction(formData: FormData) {
+  "use server"
+  const admin = await requireAdminAccess()
+  const requestId = String(formData.get("requestId") || "")
+  const reason = String(formData.get("reason") || "").trim()
+  if (!requestId || !reason) return
+  try {
+    await decideApprovalRequest({ requestId, decision: "reject", approver: { id: admin.id, role: "admin" }, reason })
+  } catch {
+    // See approveApprovalAction.
+  }
+  revalidatePath("/dashboard/admin/governance")
+}
+
+async function cancelApprovalAction(formData: FormData) {
+  "use server"
+  const admin = await requireAdminAccess()
+  const requestId = String(formData.get("requestId") || "")
+  if (!requestId) return
+  try {
+    await cancelApprovalRequest({ requestId, actor: { id: admin.id, role: "admin" } })
+  } catch {
+    // See approveApprovalAction.
+  }
+  revalidatePath("/dashboard/admin/governance")
+}
+
+function badgeClassForApprovalStatus(status: string) {
+  if (status === "pending") return "bg-amber-600 text-white hover:bg-amber-600"
+  if (status === "executed") return "bg-emerald-600 text-white hover:bg-emerald-600"
+  if (["rejected", "execution_failed", "stale", "expired"].includes(status)) {
+    return "bg-red-600 text-white hover:bg-red-600"
+  }
+  return "bg-slate-500 text-white hover:bg-slate-500"
+}
 
 async function saveSettingsAction(formData: FormData) {
   "use server"
@@ -52,10 +106,11 @@ async function saveSettingsAction(formData: FormData) {
 }
 
 export default async function AdminGovernancePage() {
-  await requireAdminAccess()
+  const admin = await requireAdminAccess()
   await dbConnect()
 
   const settings = await PlatformSetting.findOne({ singletonKey: "default" }).lean()
+  const { requests: approvalRequests } = await listApprovalRequests({ pageSize: 25 })
 
   return (
     <div className="space-y-5">
@@ -133,15 +188,94 @@ export default async function AdminGovernancePage() {
 
       <Card className="border-border/70">
         <CardHeader>
-          <CardTitle className="text-base">Governance Proposals</CardTitle>
+          <CardTitle className="text-base">Maker-Checker Approvals</CardTitle>
           <CardDescription>
-            Proposal tooling is currently in baseline mode. Create workflow hooks here when proposal voting is enabled.
+            Sensitive admin operations (reconciliation remediation, data-integrity repair, and admin role
+            reassignment) wait here for a second, distinct admin to approve or reject before they take effect.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            No active proposals yet. This section is reserved for governance proposal creation and voting summaries.
-          </p>
+          {approvalRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No approval requests yet.</p>
+          ) : (
+            <div className="max-h-[520px] overflow-auto rounded-lg border border-border/60">
+              <table className="w-full min-w-[900px] border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+                  <tr className="border-b border-border/60 text-left">
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Operation</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Target</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Status</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Requester</th>
+                    <th className="px-3 py-2 font-medium text-muted-foreground">Expires</th>
+                    <th className="px-3 py-2 text-right font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvalRequests.map((approval) => {
+                    const requestId = approval._id.toString()
+                    const isOwnRequest = approval.requesterId === admin.id
+                    return (
+                      <tr key={requestId} className="border-b border-border/50 align-top">
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-foreground">{approval.operationType}</p>
+                          <p className="text-xs text-muted-foreground">{approval.riskLevel} risk</p>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {approval.targetType}
+                          <br />
+                          <span className="text-xs">{approval.targetId}</span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge className={badgeClassForApprovalStatus(approval.status)}>{approval.status}</Badge>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">{isOwnRequest ? "You" : approval.requesterId}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {new Date(approval.expiresAt).toLocaleString()}
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col items-end gap-2">
+                            <Button asChild variant="ghost" size="sm" className="h-7">
+                              <Link href={`/dashboard/admin/governance/approvals/${requestId}`}>View</Link>
+                            </Button>
+                            {approval.status === "pending" && !isOwnRequest && (
+                              <>
+                                <form action={approveApprovalAction}>
+                                  <input type="hidden" name="requestId" value={requestId} />
+                                  <Button type="submit" size="sm" className="h-7">
+                                    Approve
+                                  </Button>
+                                </form>
+                                <form action={rejectApprovalAction} className="flex items-center gap-1">
+                                  <input type="hidden" name="requestId" value={requestId} />
+                                  <input
+                                    name="reason"
+                                    placeholder="Reason"
+                                    required
+                                    className="h-7 w-28 rounded-md border border-input bg-background px-2 text-xs"
+                                  />
+                                  <Button type="submit" size="sm" variant="outline" className="h-7">
+                                    Reject
+                                  </Button>
+                                </form>
+                              </>
+                            )}
+                            {approval.status === "pending" && isOwnRequest && (
+                              <form action={cancelApprovalAction}>
+                                <input type="hidden" name="requestId" value={requestId} />
+                                <Button type="submit" size="sm" variant="outline" className="h-7">
+                                  Cancel
+                                </Button>
+                              </form>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

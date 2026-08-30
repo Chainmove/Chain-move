@@ -1,4 +1,4 @@
-import { buildStellarReferenceUrl, getStellarConfig } from "@/lib/stellar/config"
+import { buildStellarReferenceUrl, getStellarDisplayConfig } from "@/lib/stellar/display-config"
 
 export type StellarActivityStatus = "Confirmed" | "Pending" | "Failed"
 
@@ -54,7 +54,7 @@ export function createMockStellarActivityFeed(linkedAccount: string | null): Ste
     }
   }
 
-  const config = getStellarConfig()
+  const config = getStellarDisplayConfig()
 
   return {
     linkedAccount,

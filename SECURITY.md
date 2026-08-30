@@ -57,3 +57,41 @@ Request maintainer review when touching:
 - Add tests for Paystack webhook signature validation.
 - Add tests for Privy token validation and role selection.
 - Add a secret scanning checklist to PR review.
+
+## Reporting Vulnerabilities
+
+Please do not create public GitHub issues for security vulnerabilities.
+
+Report vulnerabilities privately to the maintainers.
+
+Include:
+
+- Description
+- Impact
+- Reproduction steps
+- Suggested remediation
+
+## Sensitive Information
+
+Never expose:
+
+- Production API keys
+- JWT secrets
+- Database credentials
+- Payment provider secrets
+- Stellar private keys
+
+## Stellar Security
+
+Stellar private keys must:
+
+- Never be committed
+- Never be stored in frontend source code
+- Never be embedded in client bundles
+- Never appear in screenshots or examples
+
+Use environment variables for all secrets.
+
+## Responsible Disclosure
+
+Allow maintainers reasonable time to investigate and remediate before public disclosure.

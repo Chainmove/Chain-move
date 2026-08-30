@@ -16,18 +16,25 @@ import { formatNaira, formatPercent } from "@/lib/currency"
 import { getUserDisplayName, useAuth } from "@/hooks/use-auth"
 import { useToast } from "@/hooks/use-toast"
 
+/** Canonical money envelope from the API. See docs/api-conventions.md. */
+type Money = {
+  currency: string
+  amountMinor: number
+  amountMajor: number
+}
+
 type PortfolioInvestment = {
-  _id?: string
-  id?: string
-  vehicleId: string
-  amount: number
-  monthlyReturn?: number
+  id: string
+  vehicleId: string | null
+  amount: Money
+  monthlyReturn: Money
   status?: string
+  date: string | null
+  // Not served by /api/investments; retained so the progress and ROI panels
+  // keep their existing zero-state rendering.
   expectedROI?: number
   paymentsReceived?: number
   totalPayments?: number
-  date?: string
-  startDate?: string
 }
 
 export default function MyInvestmentsPage() {
@@ -85,7 +92,7 @@ export default function MyInvestmentsPage() {
 
   const filteredInvestments = useMemo(() => {
     return investments.filter((investment) => {
-      const vehicleName = vehicleMap.get(investment.vehicleId) || "Unknown Vehicle"
+      const vehicleName = vehicleMap.get(investment.vehicleId || "") || "Unknown Vehicle"
       const normalizedStatus = (investment.status || "Active").toLowerCase()
 
       const matchesSearch = vehicleName.toLowerCase().includes(searchTerm.toLowerCase())
@@ -96,8 +103,8 @@ export default function MyInvestmentsPage() {
   }, [investments, vehicleMap, searchTerm, statusFilter])
 
   const portfolioStats = useMemo(() => {
-    const totalInvested = filteredInvestments.reduce((sum, item) => sum + item.amount, 0)
-    const totalMonthlyReturn = filteredInvestments.reduce((sum, item) => sum + (item.monthlyReturn || 0), 0)
+    const totalInvested = filteredInvestments.reduce((sum, item) => sum + item.amount.amountMajor, 0)
+    const totalMonthlyReturn = filteredInvestments.reduce((sum, item) => sum + item.monthlyReturn.amountMajor, 0)
     const averageROI =
       filteredInvestments.length > 0
         ? filteredInvestments.reduce((sum, item) => sum + (item.expectedROI || 0), 0) / filteredInvestments.length
@@ -122,11 +129,11 @@ export default function MyInvestmentsPage() {
     const rows = [
       ["Vehicle", "Status", "Amount (NGN)", "Monthly Return (NGN)", "Start Date"],
       ...filteredInvestments.map((item) => [
-        vehicleMap.get(item.vehicleId) || "Unknown Vehicle",
+        vehicleMap.get(item.vehicleId || "") || "Unknown Vehicle",
         item.status || "Active",
-        item.amount,
-        item.monthlyReturn || 0,
-        new Date(item.date || item.startDate || Date.now()).toLocaleDateString(),
+        item.amount.amountMajor,
+        item.monthlyReturn.amountMajor,
+        new Date(item.date || Date.now()).toLocaleDateString(),
       ]),
     ]
 
@@ -271,7 +278,7 @@ export default function MyInvestmentsPage() {
                 ) : (
                   <div className="space-y-3">
                     {filteredInvestments.map((investment) => {
-                      const vehicleName = vehicleMap.get(investment.vehicleId) || "Unknown Vehicle"
+                      const vehicleName = vehicleMap.get(investment.vehicleId || "") || "Unknown Vehicle"
                       const currentStatus = investment.status || "Active"
                       const progress =
                         (investment.totalPayments || 0) > 0
@@ -279,20 +286,20 @@ export default function MyInvestmentsPage() {
                           : 0
 
                       return (
-                        <article key={investment._id || investment.id} className="rounded-xl border p-4">
+                        <article key={investment.id} className="rounded-xl border p-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                               <h3 className="font-semibold">{vehicleName}</h3>
                               <p className="text-sm text-muted-foreground">
-                                Started {new Date(investment.date || investment.startDate || Date.now()).toLocaleDateString()}
+                                Started {new Date(investment.date || Date.now()).toLocaleDateString()}
                               </p>
                             </div>
 
                             <div className="text-left sm:text-right">
                               <Badge variant="secondary">{currentStatus}</Badge>
-                              <p className="mt-2 font-semibold">{formatNaira(investment.amount)}</p>
+                              <p className="mt-2 font-semibold">{formatNaira(investment.amount.amountMajor)}</p>
                               <p className="text-xs text-green-600 dark:text-emerald-400">
-                                +{formatNaira(investment.monthlyReturn || 0)} / month
+                                +{formatNaira(investment.monthlyReturn.amountMajor)} / month
                               </p>
                             </div>
                           </div>

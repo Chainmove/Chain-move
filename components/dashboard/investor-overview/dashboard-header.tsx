@@ -1,10 +1,12 @@
 "use client"
 
-import { Bell, ChevronDown, Menu, MoreVertical, User } from "lucide-react"
+import { ChevronDown, Menu, MoreVertical, User } from "lucide-react"
 
 import { emitDashboardSidebarToggle } from "@/components/dashboard/sidebar-events"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
+import { ActivityUnreadBell } from "@/components/dashboard/activity-unread-bell"
+import { useAuth } from "@/hooks/use-auth"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +30,8 @@ export function DashboardHeader({
   onWalletChipClick,
   notificationCount = 0,
 }: DashboardHeaderProps) {
+  const { user } = useAuth()
+
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/95 backdrop-blur">
       <div className="flex h-[60px] items-center justify-between px-4 md:px-6">
@@ -52,19 +56,11 @@ export function DashboardHeader({
         <div className="flex items-center gap-2 md:gap-3">
           <ThemeToggle className="hidden h-8 w-8 rounded-md text-muted-foreground hover:bg-muted md:inline-flex" />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative h-8 w-8 rounded-md text-muted-foreground hover:bg-muted"
-            aria-label="Notifications"
-          >
-            <Bell className="h-4 w-4" />
-            {notificationCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-[#E53935] px-1 text-[9px] font-semibold text-white">
-                {notificationCount > 99 ? "99+" : notificationCount}
-              </span>
-            ) : null}
-          </Button>
+          <ActivityUnreadBell
+            role={user?.role === "driver" || user?.role === "investor" || user?.role === "admin" ? user.role : undefined}
+            fallbackCount={notificationCount}
+            compact
+          />
 
           <button
             type="button"

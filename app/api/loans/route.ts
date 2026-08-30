@@ -1,7 +1,8 @@
 import mongoose from "mongoose"
 import { NextResponse } from "next/server"
 
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { withSessionRefresh } from "@/lib/auth/current-user"
+import { authorizeRequest } from "@/lib/authorization/route"
 import dbConnect from "@/lib/dbConnect"
 import { logAuditEvent } from "@/lib/security/audit-log"
 import { getClientIpAddress } from "@/lib/security/rate-limit"
@@ -12,10 +13,6 @@ const LOAN_STATUS_VALUES = ["Pending", "Under Review", "Approved", "Rejected", "
 
 function isObjectId(value: unknown): value is string {
   return typeof value === "string" && mongoose.Types.ObjectId.isValid(value)
-}
-
-function isApprovedDriver(user: any) {
-  return user?.role === "driver" && (user?.kycStatus === "approved_stage2" || user?.isKycVerified === true || user?.kycVerified === true)
 }
 
 function formatLoan(loan: any) {
@@ -36,19 +33,15 @@ export async function GET(request: Request) {
   try {
     await dbConnect()
 
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    if (user.role !== "admin" && user.role !== "driver") {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 })
-    }
-
     const { searchParams } = new URL(request.url)
     const requestedUserId = searchParams.get("userId")
     const requestedStatus = searchParams.get("status")
     const query: Record<string, unknown> = {}
+    const auth = await authorizeRequest(request, "loan:read", user => Promise.resolve({
+      type: "loan", ownerId: user.role === "admin" && requestedUserId ? requestedUserId : user._id.toString(),
+    }))
+    if ("response" in auth) return auth.response
+    const { user, shouldRefreshSession } = auth
 
     if (user.role === "admin") {
       if (requestedUserId) {
@@ -85,17 +78,11 @@ export async function POST(request: Request) {
   try {
     await dbConnect()
 
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    if (!isApprovedDriver(user)) {
-      return NextResponse.json({ error: "Only KYC-approved drivers can create loan applications." }, { status: 403 })
-    }
+    const auth = await authorizeRequest(request, "loan:create", { type: "loan" })
+    if ("response" in auth) return auth.response
+    const { user, shouldRefreshSession } = auth
 
     const body = await request.json().catch(() => ({}))
-    const requestedDriverId = typeof body.driverId === "string" ? body.driverId : undefined
     const vehicleId = typeof body.vehicleId === "string" ? body.vehicleId : ""
     const requestedAmount = toPositiveNumber(body.requestedAmount)
     const loanTerm = toPositiveNumber(body.loanTerm)
@@ -107,9 +94,7 @@ export async function POST(request: Request) {
     const collateral = typeof body.collateral === "string" ? body.collateral.trim() : ""
     const riskAssessment = body.riskAssessment === "Low" || body.riskAssessment === "High" ? body.riskAssessment : "Medium"
 
-    if (requestedDriverId && requestedDriverId !== user._id.toString()) {
-      return NextResponse.json({ error: "You can only submit a loan for your own account." }, { status: 403 })
-    }
+    // Request-supplied driver IDs are never trusted; ownership always comes from the principal.
 
     if (!isObjectId(vehicleId) || !requestedAmount || !loanTerm || !monthlyPayment || !weeklyPayment || !interestRate) {
       return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
@@ -194,15 +179,6 @@ export async function PUT(request: Request) {
   try {
     await dbConnect()
 
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
-    if (user.role !== "admin") {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 })
-    }
-
     const body = await request.json().catch(() => ({}))
     const loanId = typeof body.loanId === "string" ? body.loanId : ""
     const status = typeof body.status === "string" ? body.status : ""
@@ -213,9 +189,13 @@ export async function PUT(request: Request) {
     }
 
     const loan = await Loan.findById(loanId)
-    if (!loan) {
-      return NextResponse.json({ error: "Loan not found" }, { status: 404 })
-    }
+    const auth = await authorizeRequest(request, "loan:approve", {
+      type: "loan", state: loan?.status, exists: Boolean(loan),
+    })
+    if ("response" in auth) return auth.response
+    const { user, shouldRefreshSession } = auth
+    if (!loan) return NextResponse.json({ error: "Loan not found" }, { status: 404 })
+    if (status !== "Approved" && status !== "Rejected") return NextResponse.json({ error: "Only approval or rejection is allowed from the review workflow." }, { status: 409 })
 
     loan.status = status
     loan.adminNotes = adminNotes || undefined

@@ -1,44 +1,43 @@
-import { NextResponse } from "next/server"
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { WalletSummaryResponseSchema } from "@/lib/api/contracts"
+import { defineRoute } from "@/lib/api/route-handler"
+import { money, serializeDateTime, serializeId } from "@/lib/api/serialization"
 import Transaction from "@/models/Transaction"
 
-export async function GET(request: Request) {
-  try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
+const WALLET_TRANSACTION_TYPES = ["deposit", "wallet_funding", "pool_investment", "wallet_debit"]
 
+export const GET = defineRoute({
+  operationId: "getWalletSummary",
+  method: "GET",
+  auth: "authenticated",
+  action: "wallet:read",
+  resource: ({ user }) => ({ type: "wallet", ownerId: String(user._id) }),
+  response: WalletSummaryResponseSchema,
+  successStatus: 200,
+  handler: async ({ user }) => {
     const transactions = await Transaction.find({
       userId: user._id,
-      type: { $in: ["deposit", "wallet_funding", "pool_investment", "wallet_debit"] },
+      type: { $in: WALLET_TRANSACTION_TYPES },
     })
       .sort({ timestamp: -1 })
       .limit(20)
       .lean()
 
-    const response = NextResponse.json({
-      success: true,
+    return {
+      success: true as const,
       wallet: {
-        internalBalanceNgn: user.availableBalance || 0,
-        walletAddress: user.walletAddress || user.walletaddress || null,
+        internalBalance: money(Number(user.availableBalance) || 0),
+        walletAddress: (user.walletAddress as string) || (user.walletaddress as string) || null,
       },
-      transactions: transactions.map((tx: any) => ({
-        id: tx._id.toString(),
-        type: tx.type,
-        amount: tx.amount,
-        currency: tx.currency || "NGN",
-        status: tx.status,
-        method: tx.method,
-        description: tx.description,
-        reference: tx.gatewayReference,
-        timestamp: tx.timestamp,
+      transactions: transactions.map((transaction) => ({
+        id: serializeId(transaction._id) as string,
+        type: transaction.type,
+        amount: money(Number(transaction.amount) || 0, transaction.currency || "NGN"),
+        status: transaction.status ?? "Completed",
+        method: transaction.method ?? null,
+        description: transaction.description ?? "",
+        reference: transaction.gatewayReference ?? null,
+        timestamp: serializeDateTime(transaction.timestamp) ?? new Date().toISOString(),
       })),
-    })
-
-    return shouldRefreshSession ? withSessionRefresh(response, user) : response
-  } catch (error) {
-    console.error("WALLET_SUMMARY_ERROR", error)
-    return NextResponse.json({ message: "Failed to load wallet summary." }, { status: 500 })
-  }
-}
+    }
+  },
+})

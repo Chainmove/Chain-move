@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { AlertCircle, Building2, CheckCircle2, Copy, Landmark, Wallet } from "lucide-react"
+import { AlertCircle, Building2, CheckCircle2, Copy, FlaskConical, Landmark, Wallet } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { MockRepaymentSimulator } from "@/components/dashboard/driver-hire-purchase/mock-repayment-simulator"
 import { formatNaira } from "@/lib/currency"
 import { useToast } from "@/hooks/use-toast"
 
@@ -18,11 +19,14 @@ interface DriverVirtualAccountCardProps {
         bankName: string
         providerSlug?: string | null
         status: "PENDING" | "ACTIVE" | "FAILED" | "INACTIVE"
+        isMock?: boolean
+        mockReference?: string | null
       }
     | null
   errorMessage?: string | null
   remainingBalanceNgn: number
   nextPaymentAmountNgn: number
+  showMockSimulator?: boolean
 }
 
 function resolveStatusBadgeVariant(status?: string | null) {
@@ -37,6 +41,7 @@ export function DriverVirtualAccountCard({
   errorMessage,
   remainingBalanceNgn,
   nextPaymentAmountNgn,
+  showMockSimulator = false,
 }: DriverVirtualAccountCardProps) {
   const { toast } = useToast()
   const [isCopying, setIsCopying] = useState(false)
@@ -73,12 +78,24 @@ export function DriverVirtualAccountCard({
             </CardDescription>
           </div>
           <Badge variant={resolveStatusBadgeVariant(account?.status || (errorMessage ? "FAILED" : "PENDING"))}>
-            {account?.status || (errorMessage ? "Unavailable" : "Provisioning")}
+            {account?.isMock ? "Mock Test Account" : account?.status || (errorMessage ? "Unavailable" : "Provisioning")}
           </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4 p-4 md:p-5">
+        {account?.isMock ? (
+          <Alert className="border-dashed border-amber-400/80 bg-amber-50/70 dark:bg-amber-950/20">
+            <FlaskConical className="h-4 w-4 text-amber-700 dark:text-amber-300" />
+            <AlertTitle>Test-only mock Paystack account</AlertTitle>
+            <AlertDescription>
+              Bank details below are fake local data for contributor testing. Production Paystack behavior is unchanged
+              when mock mode is disabled.
+              {account.mockReference ? ` Reference: ${account.mockReference}` : null}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         {account ? (
           <>
             <div className="grid gap-4 rounded-lg border border-border/60 bg-background p-4 md:grid-cols-[1.2fr_0.8fr]">
@@ -142,10 +159,21 @@ export function DriverVirtualAccountCard({
                   Provider
                 </div>
                 <p className="mt-2">
-                  {account.providerSlug ? account.providerSlug : "Paystack dedicated virtual account"}
+                  {account.isMock
+                    ? "mock-paystack (local test provider)"
+                    : account.providerSlug
+                      ? account.providerSlug
+                      : "Paystack dedicated virtual account"}
                 </p>
               </div>
             </div>
+
+            {showMockSimulator && account.isMock ? (
+              <MockRepaymentSimulator
+                defaultAmountNgn={nextPaymentAmountNgn}
+                maxAmountNgn={remainingBalanceNgn}
+              />
+            ) : null}
           </>
         ) : (
           <Alert variant="destructive">

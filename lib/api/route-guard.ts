@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import { authorizeRole } from "@/lib/authorization/policy"
 
 export const APP_USER_ROLES = ["admin", "driver", "investor"] as const
 
@@ -34,7 +35,8 @@ export async function requireAuthenticatedUser(
   }
 
   const role = normalizeUserRole(authContext.user.role)
-  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+  const roleDecision = authorizeRole(role, allowedRoles)
+  if (!roleDecision.allowed) {
     return {
       response: NextResponse.json(
         { message: options?.forbiddenMessage || "Access denied" },
@@ -43,7 +45,9 @@ export async function requireAuthenticatedUser(
     }
   }
 
-  return authContext
+  // `authContext.user` is guaranteed non-null past the guard above; re-assert it
+  // so callers don't have to null-check the authenticated user.
+  return { ...authContext, user: authContext.user }
 }
 
 export async function finalizeAuthenticatedResponse(

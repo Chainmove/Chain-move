@@ -1,28 +1,57 @@
-import { NextResponse } from "next/server"
-
-import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
+import { KycRequestListQuerySchema, KycRequestListResponseSchema } from "@/lib/api/contracts"
+import { buildPaginationMeta } from "@/lib/api/pagination"
+import { defineRoute } from "@/lib/api/route-handler"
+import { serializeDateTime, serializeId } from "@/lib/api/serialization"
 import dbConnect from "@/lib/dbConnect"
 import User from "@/models/User"
 
-export async function GET(request: Request) {
-  try {
+export const GET = defineRoute({
+  operationId: "listKycRequests",
+  method: "GET",
+  auth: "authenticated",
+  action: "kyc:review",
+  resource: () => ({ type: "kyc" }),
+  query: KycRequestListQuerySchema,
+  response: KycRequestListResponseSchema,
+  successStatus: 200,
+  handler: async ({ query }) => {
     await dbConnect()
 
-    const authContext = await requireAuthenticatedUser(request, ["admin"], {
-      forbiddenMessage: "Admin access required",
-    })
-    if ("response" in authContext) return authContext.response
+    const filter: Record<string, unknown> = { role: { $in: ["driver", "investor"] } }
+    if (query.status) filter.kycStatus = query.status
 
-    const kycRequests = await User.find({ role: { $in: ["driver", "investor"] } })
-      .select(
-        "role name fullName email phoneNumber kycStatus kycDocuments kycRejectionReason createdAt updatedAt physicalMeetingDate physicalMeetingStatus",
-      )
-      .sort({ updatedAt: -1 })
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select(
+          "role name fullName email phoneNumber kycStatus kycDocuments kycRejectionReason " +
+            "physicalMeetingDate physicalMeetingStatus updatedAt",
+        )
+        .sort({ updatedAt: -1 })
+        .skip((query.page - 1) * query.pageSize)
+        .limit(query.pageSize)
+        .lean(),
+      User.countDocuments(filter),
+    ])
 
-    const response = NextResponse.json(kycRequests, { status: 200 })
-    return finalizeAuthenticatedResponse(response, authContext)
-  } catch (error) {
-    console.error("KYC_REQUESTS_GET_ERROR", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
+    return {
+      success: true as const,
+      requests: users.map((user) => ({
+        id: serializeId(user._id) as string,
+        role: user.role,
+        name: user.fullName ?? user.name ?? null,
+        email: user.email ?? null,
+        phoneNumber: user.phoneNumber ?? null,
+        kycStatus: user.kycStatus ?? "none",
+        documentCount: Array.isArray(user.kycDocuments) ? user.kycDocuments.length : 0,
+        // The reviewer needs these to open each document. Resolution still goes
+        // through GET /api/kyc-documents, which authorizes per document.
+        documentReferences: Array.isArray(user.kycDocuments) ? user.kycDocuments.map(String) : [],
+        rejectionReason: user.kycRejectionReason ?? null,
+        physicalMeetingStatus: user.physicalMeetingStatus ?? null,
+        physicalMeetingDate: serializeDateTime(user.physicalMeetingDate),
+        updatedAt: serializeDateTime(user.updatedAt),
+      })),
+      pagination: buildPaginationMeta({ page: query.page, pageSize: query.pageSize, total }),
+    }
+  },
+})

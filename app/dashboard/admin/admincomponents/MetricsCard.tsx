@@ -3,13 +3,12 @@
 
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { LucideIcon } from "lucide-react";
 
 interface MetricsCardProps {
   title: string;
   value: string;
   description: string;
-  icon: LucideIcon;
+  icon: React.ComponentType<{ className?: string }>;
   gradient: string;
 }
 

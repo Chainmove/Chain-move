@@ -56,4 +56,5 @@ const InvestorCreditSchema: Schema = new Schema(
 InvestorCreditSchema.index({ paymentId: 1, investorUserId: 1 }, { unique: true })
 InvestorCreditSchema.index({ investorUserId: 1, createdAt: -1 })
 
-export default mongoose.models.InvestorCredit || mongoose.model<IInvestorCredit>("InvestorCredit", InvestorCreditSchema)
+export default (mongoose.models.InvestorCredit ||
+  mongoose.model<IInvestorCredit>("InvestorCredit", InvestorCreditSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

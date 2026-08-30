@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from "mongoose"
 
 export type GatewayPaymentType = "wallet_funding" | "down_payment"
 
-export interface IProcessedGatewayEvent extends Document {
+export interface IProcessedGatewayEvent extends Document<string> {
   _id: string
   paymentType: GatewayPaymentType
   processedVia: "verify" | "webhook"
@@ -31,5 +31,5 @@ const ProcessedGatewayEventSchema = new Schema<IProcessedGatewayEvent>(
   { _id: false, timestamps: true },
 )
 
-export default mongoose.models.ProcessedGatewayEvent ||
-  mongoose.model<IProcessedGatewayEvent>("ProcessedGatewayEvent", ProcessedGatewayEventSchema)
+export default (mongoose.models.ProcessedGatewayEvent ||
+  mongoose.model<IProcessedGatewayEvent>("ProcessedGatewayEvent", ProcessedGatewayEventSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

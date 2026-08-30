@@ -2,9 +2,9 @@ import mongoose, { Document, Schema } from "mongoose"
 
 /**
  * Records each Stellar network event that has been ingested by the indexer.
- * The `_id` field is used as the idempotency key — it is set to the Stellar
- * event/operation/payment ID so a second attempt to insert the same event
- * hits the unique index and is safely ignored.
+ * The `_id` field is used as the idempotency key. It includes the selected
+ * Stellar network plus the Horizon operation/payment ID so testnet and mainnet
+ * projections cannot collide.
  */
 export type StellarEventType =
   | "payment"
@@ -25,9 +25,30 @@ export type ChainMoveRecordType =
   | "contract_interaction"
   | "unclassified"
 
+export type StellarIndexedEventStatus = "active" | "quarantined"
+export type StellarIndexedEventProvenance = "indexed" | "rebuilt_from_raw" | "legacy_backfill" | "legacy_quarantine"
+
+export function normalizeStellarIndexedNetwork(network: string): string {
+  return network.trim().toLowerCase()
+}
+
+export function buildStellarIndexedEventId(network: string, operationId: string): string {
+  return `${normalizeStellarIndexedNetwork(network)}:${operationId}`
+}
+
 export interface IStellarIndexedEvent {
-  /** Stellar event/operation/payment ID used as idempotency key. */
+  /** Network-scoped idempotency key: `${network}:${operationId}`. */
   _id: string
+  /** Immutable Stellar network provenance for this projected event. */
+  network: string
+  /** Original Stellar event/operation/payment ID from Horizon. */
+  operationId: string
+  /** Whether the projection is safe to serve from live activity queries. */
+  projectionStatus: StellarIndexedEventStatus
+  /** Migration provenance for legacy projected rows. */
+  projectionProvenance?: StellarIndexedEventProvenance
+  /** Reason a legacy or failed projection was quarantined. */
+  quarantineReason?: string
   /** Stellar paging token / cursor at the time this event was indexed. */
   pagingToken: string
   /** Raw Stellar event type string from Horizon. */
@@ -58,6 +79,31 @@ const StellarIndexedEventSchema = new Schema<IStellarIndexedEvent>(
       type: String,
       required: true,
     },
+    network: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      index: true,
+    },
+    operationId: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
+    projectionStatus: {
+      type: String,
+      enum: ["active", "quarantined"],
+      required: true,
+      default: "active",
+      index: true,
+    },
+    projectionProvenance: {
+      type: String,
+      enum: ["indexed", "rebuilt_from_raw", "legacy_backfill", "legacy_quarantine"],
+    },
+    quarantineReason: { type: String },
     pagingToken: {
       type: String,
       required: true,
@@ -104,5 +150,10 @@ const StellarIndexedEventSchema = new Schema<IStellarIndexedEvent>(
   { _id: false, timestamps: true },
 )
 
-export default mongoose.models.StellarIndexedEvent ||
-  mongoose.model<IStellarIndexedEvent>("StellarIndexedEvent", StellarIndexedEventSchema)
+StellarIndexedEventSchema.index({ network: 1, operationId: 1 }, { unique: true })
+StellarIndexedEventSchema.index({ network: 1, projectionStatus: 1, stellarCreatedAt: -1, createdAt: -1 })
+StellarIndexedEventSchema.index({ network: 1, sourceAccount: 1, projectionStatus: 1 })
+StellarIndexedEventSchema.index({ network: 1, destinationAccount: 1, projectionStatus: 1 }, { sparse: true })
+
+export default (mongoose.models.StellarIndexedEvent ||
+  mongoose.model<IStellarIndexedEvent>("StellarIndexedEvent", StellarIndexedEventSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

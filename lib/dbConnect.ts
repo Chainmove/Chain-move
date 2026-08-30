@@ -1,4 +1,6 @@
 import mongoose from "mongoose"
+import { logger } from "@/lib/observability/logger"
+import { incrementMetric, recordLatency } from "@/lib/observability/metrics"
 
 type MongooseCache = {
   conn: typeof mongoose | null
@@ -35,8 +37,33 @@ async function dbConnect() {
     })
   }
 
-  cached.conn = await cached.promise
+  const startedAt = performance.now()
+  try {
+    cached.conn = await cached.promise
+    recordLatency("database.connect", performance.now() - startedAt)
+    incrementMetric("database.operations", "success")
+  } catch (error) {
+    cached.promise = null
+    incrementMetric("database.failures", "connect")
+    logger.error({ event: "database.connect.failed", error })
+    throw error
+  }
   return cached.conn
+}
+
+// Mongoose's debug hook is intentionally enabled only outside production. It
+// captures query shape without logging values that can be personal or financial
+// data; explicit explain plans remain a local investigation tool.
+if (process.env.NODE_ENV !== "production") {
+  mongoose.set("debug", (collection: string, method: string, query: unknown) => {
+    incrementMetric("database.operations", method)
+    logger.debug({
+      event: "database.query",
+      collection,
+      method,
+      queryShape: Object.keys((query || {}) as Record<string, unknown>),
+    })
+  })
 }
 
 export default dbConnect

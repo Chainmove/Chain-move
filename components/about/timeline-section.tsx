@@ -71,7 +71,7 @@ export function TimelineSection() {
               <div
                 key={index}
                 data-index={index}
-                ref={el => (itemRefs.current[index] = el)}
+                ref={el => { itemRefs.current[index] = el }}
                 className={`relative grid grid-cols-3 gap-4 items-start transition-all duration-700 ease-out transform ${
                   visible[index] ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
                 }`}

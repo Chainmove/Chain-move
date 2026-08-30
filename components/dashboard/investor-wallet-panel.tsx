@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { formatEther } from "viem"
-import { liskSepolia } from "viem/chains"
 import {
   ArrowRight,
   CheckCircle2,
@@ -31,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CURRENT_EMBEDDED_WALLET, getWalletDisplay, shortenWalletAddress } from "@/lib/wallet/config"
 import {
   Table,
   TableBody,
@@ -40,21 +40,33 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
+/** Canonical money envelope from the API. See docs/api-conventions.md. */
+interface Money {
+  currency: string
+  amountMinor: number
+  amountMajor: number
+}
+
 interface WalletTransaction {
   id: string
   type: string
-  amount: number
-  currency: string
+  amount: Money
   status: string
-  method?: string
+  method: string | null
   description: string
-  reference?: string
+  reference: string | null
   timestamp: string
+}
+
+/** Builds the API money envelope for locally synthesized demo rows. */
+function toMoney(amountMajor: number, currency: string): Money {
+  const safeMajor = Number.isFinite(amountMajor) ? amountMajor : 0
+  return { currency, amountMinor: Math.round(safeMajor * 100), amountMajor: safeMajor }
 }
 
 interface WalletSummaryPayload {
   wallet: {
-    internalBalanceNgn: number
+    internalBalance: Money
     walletAddress: string | null
   }
   transactions: WalletTransaction[]
@@ -64,11 +76,6 @@ interface InvestorWalletPanelProps {
   sectionId?: string
   className?: string
   showTitle?: boolean
-}
-
-function truncateAddress(address: string) {
-  if (address.length < 10) return address
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 function toPaystackAmount(value: string) {
@@ -87,7 +94,8 @@ function isValidEmail(value: string) {
 }
 
 async function resolveOnchainBalance(address: string) {
-  const rpcUrl = liskSepolia.rpcUrls.default.http[0]
+  const rpcUrl = CURRENT_EMBEDDED_WALLET.network.rpcUrl
+  if (!rpcUrl) return null
   const response = await fetch(rpcUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -104,7 +112,7 @@ async function resolveOnchainBalance(address: string) {
 
   const balance = Number.parseFloat(formatEther(BigInt(payload.result)))
   if (!Number.isFinite(balance)) return null
-  return `${balance.toFixed(4)} ETH`
+  return `${balance.toFixed(4)} ${CURRENT_EMBEDDED_WALLET.network.nativeAsset}`
 }
 
 export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle = true }: InvestorWalletPanelProps) {
@@ -133,18 +141,22 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
   )
 
   const walletAddress = isMockStellar ? mockAccount.publicKey : (walletSummary?.wallet.walletAddress || embeddedWallet?.address || authUser?.walletAddress || "")
-  const internalBalance = walletSummary?.wallet.internalBalanceNgn || 0
+  const walletDisplay = getWalletDisplay({
+    embeddedWalletAddress: walletAddress,
+    stellarPublicKey: isMockStellar ? mockAccount.publicKey : authUser?.stellarPublicKey,
+  })
+  const internalBalance = walletSummary?.wallet.internalBalance.amountMajor || 0
 
-  const fundingTransactions = useMemo(() => {
+  const fundingTransactions = useMemo<WalletTransaction[]>(() => {
     if (isMockStellar) {
       return mockActivity.map(activity => ({
         id: activity.id,
         type: activity.type,
-        amount: Number.parseFloat(activity.amount),
-        currency: "USD",
+        amount: toMoney(Number.parseFloat(activity.amount), "USD"),
         status: activity.status,
         method: "Stellar Demo",
         description: activity.type,
+        reference: null,
         timestamp: activity.timestamp,
       }))
     }
@@ -160,7 +172,7 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
 
     if (isMockStellar) {
       setWalletSummary({
-        wallet: { internalBalanceNgn: 150000, walletAddress: mockAccount.publicKey },
+        wallet: { internalBalance: toMoney(150000, "NGN"), walletAddress: mockAccount.publicKey },
         transactions: []
       })
       setIsSummaryLoading(false)
@@ -224,12 +236,12 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
   )
 
   const openWalletExplorer = () => {
-    if (!walletAddress) return
-    window.open(`https://sepolia-blockscout.lisk.com/address/${walletAddress}`, "_blank", "noopener,noreferrer")
+    if (!walletDisplay.explorerUrl) return
+    window.open(walletDisplay.explorerUrl, "_blank", "noopener,noreferrer")
   }
 
   const handleOpenWalletView = () => {
-    if (!walletAddress) {
+    if (!walletDisplay.explorerUrl) {
       toast({
         title: "Wallet unavailable",
         description: "Your embedded wallet address is not ready yet. Please sign out and sign in again.",
@@ -344,7 +356,7 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
         throw new Error(payload.message || "Unable to initialize Paystack funding.")
       }
 
-      const redirectUrl = payload?.data?.authorization_url
+      const redirectUrl = payload?.payment?.authorizationUrl
       if (!redirectUrl) {
         throw new Error("Missing Paystack authorization URL.")
       }
@@ -362,8 +374,8 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
   }
 
   const handleCopyAddress = async () => {
-    if (!walletAddress) return
-    await navigator.clipboard.writeText(walletAddress)
+    if (!walletDisplay.address) return
+    await navigator.clipboard.writeText(walletDisplay.address)
     toast({
       title: "Address copied",
       description: "Wallet address copied to clipboard.",
@@ -510,14 +522,15 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
           </div>
 
           <div className="rounded-xl border bg-muted/20 p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Wallet address</p>
-            <p className="mt-2 break-all font-mono text-sm">{walletAddress ? truncateAddress(walletAddress) : "Not available"}</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">{walletDisplay.addressLabel}</p>
+            <p className="mt-2 break-all font-mono text-sm">{walletDisplay.address ? shortenWalletAddress(walletDisplay.address) : "Not available"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{walletDisplay.networkLabel}</p>
             <div className="mt-2 flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleCopyAddress} disabled={!walletAddress}>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleCopyAddress} disabled={!walletDisplay.address}>
                 <Copy className="mr-1.5 h-3.5 w-3.5" />
                 Copy
               </Button>
-              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleOpenWalletView} disabled={!walletAddress}>
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleOpenWalletView} disabled={!walletDisplay.explorerUrl}>
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
                 Open wallet
               </Button>
@@ -539,7 +552,7 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
               <p className="mt-2 text-xl font-semibold">{onchainLoading ? "Loading..." : onchainBalance || "Unavailable"}</p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
-              {isMockStellar ? "Stellar Mock Assets" : "Lisk Sepolia embedded wallet"}
+              {isMockStellar ? "Stellar Mock Assets" : `${CURRENT_EMBEDDED_WALLET.network.label} embedded wallet`}
             </p>
           </div>
         </div>
@@ -651,7 +664,7 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
                       <Badge variant={tx.status.toLowerCase() === "completed" ? "default" : "secondary"}>{tx.status}</Badge>
                     </div>
                     <p className="mt-2 text-sm capitalize text-muted-foreground">{tx.method || tx.type.replaceAll("_", " ")}</p>
-                    <p className="mt-1 text-sm font-semibold">{formatNaira(tx.amount)}</p>
+                    <p className="mt-1 text-sm font-semibold">{formatNaira(tx.amount.amountMajor)}</p>
                   </article>
                 ))}
               </div>
@@ -676,7 +689,7 @@ export function InvestorWalletPanel({ sectionId = "wallet", className, showTitle
                             {tx.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right font-medium">{formatNaira(tx.amount)}</TableCell>
+                        <TableCell className="text-right font-medium">{formatNaira(tx.amount.amountMajor)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

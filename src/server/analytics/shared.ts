@@ -80,7 +80,7 @@ async function aggregateTotal({
   match,
   sumField,
 }: {
-  model: { aggregate: (pipeline: Record<string, unknown>[]) => Promise<Array<{ total?: number }>> }
+  model: { aggregate: (pipeline: any[]) => Promise<any[]> }
   match: Record<string, unknown>
   sumField: string
 }) {

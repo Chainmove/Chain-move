@@ -7,9 +7,6 @@ import { logAuditEvent } from "@/lib/security/audit-log"
 import { getClientIpAddress } from "@/lib/security/rate-limit"
 import Vehicle from "@/models/Vehicle"
 
-const VEHICLE_STATUS_VALUES = ["Available", "Financed", "Reserved", "Maintenance", "Retired"] as const
-const FUNDING_STATUS_VALUES = ["Open", "Funded", "Active"] as const
-
 function isObjectId(value: unknown): value is string {
   return typeof value === "string" && mongoose.Types.ObjectId.isValid(value)
 }
@@ -66,21 +63,8 @@ function buildVehicleUpdatePayload(body: unknown) {
 
   if ("image" in body) payload.image = normalizeString(body.image) || undefined
 
-  if ("status" in body) {
-    const status = normalizeString(body.status)
-    if (!VEHICLE_STATUS_VALUES.includes(status as (typeof VEHICLE_STATUS_VALUES)[number])) {
-      throw new Error("Invalid status.")
-    }
-    payload.status = status
-  }
-
-  if ("fundingStatus" in body) {
-    const fundingStatus = normalizeString(body.fundingStatus)
-    if (!FUNDING_STATUS_VALUES.includes(fundingStatus as (typeof FUNDING_STATUS_VALUES)[number])) {
-      throw new Error("Invalid funding status.")
-    }
-    payload.fundingStatus = fundingStatus
-  }
+  // status and fundingStatus are intentionally omitted — all status changes must
+  // go through the /api/vehicles/[id]/transition endpoint.
 
   if ("totalFundedAmount" in body) {
     const totalFundedAmount = normalizeNumber(body.totalFundedAmount)

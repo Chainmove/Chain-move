@@ -36,22 +36,29 @@ const DEFAULT_TARGETS: Record<AssetType, number> = {
   KEKE: 3_500_000,
 }
 
+/** Canonical money envelope from the API. See docs/api-conventions.md. */
+interface Money {
+  currency: string
+  amountMinor: number
+  amountMajor: number
+}
+
 interface PoolRecord {
   id: string
   assetType: AssetType
-  assetPriceNgn: number
-  targetAmountNgn: number
-  minContributionNgn: number
+  assetPrice: Money
+  targetAmount: Money
+  minContribution: Money
   status: "OPEN" | "FUNDED" | "CLOSED"
-  currentRaisedNgn: number
+  currentRaised: Money
   investorCount: number
-  remainingAmountNgn: number
+  remainingAmount: Money
   progressRatio: number
   description?: string
   createdAt: string
   userOwnershipUnits?: number
   userOwnershipBps?: number
-  userInvestedNgn?: number
+  userInvested?: Money
 }
 
 function parseAmount(value: string) {
@@ -112,7 +119,7 @@ export default function OpenOpportunitiesPage() {
       if (!response.ok) {
         throw new Error(payload.message || "Unable to fetch wallet balance.")
       }
-      setWalletBalance(payload.wallet?.internalBalanceNgn || 0)
+      setWalletBalance(payload.wallet?.internalBalance?.amountMajor || 0)
     } catch {
       setWalletBalance(authUser?.availableBalance || 0)
     }
@@ -222,7 +229,7 @@ export default function OpenOpportunitiesPage() {
       setInvestAmount("")
       setSelectedPool(null)
 
-      setWalletBalance(payload.investment?.userBalanceNgn ?? walletBalance)
+      setWalletBalance(payload.investment?.userBalance?.amountMajor ?? walletBalance)
       await Promise.all([loadPools(), refetch?.()])
     } catch (error) {
       toast({
@@ -443,7 +450,7 @@ export default function OpenOpportunitiesPage() {
                         <div className="flex items-start justify-between">
                           <div>
                             <CardTitle className="text-base">{pool.assetType}</CardTitle>
-                            <CardDescription>Asset price: {formatNaira(pool.assetPriceNgn)}</CardDescription>
+                            <CardDescription>Asset price: {formatNaira(pool.assetPrice.amountMajor)}</CardDescription>
                           </div>
                           <Badge variant={pool.status === "OPEN" ? "default" : "secondary"}>{pool.status}</Badge>
                         </div>
@@ -454,19 +461,19 @@ export default function OpenOpportunitiesPage() {
                         <div className="space-y-1.5 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Target</span>
-                            <span>{formatNaira(pool.targetAmountNgn)}</span>
+                            <span>{formatNaira(pool.targetAmount.amountMajor)}</span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Raised</span>
-                            <span>{formatNaira(pool.currentRaisedNgn)}</span>
+                            <span>{formatNaira(pool.currentRaised.amountMajor)}</span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Remaining</span>
-                            <span>{formatNaira(pool.remainingAmountNgn)}</span>
+                            <span>{formatNaira(pool.remainingAmount.amountMajor)}</span>
                           </div>
                           <div className="flex items-center justify-between">
                             <span className="text-muted-foreground">Min contribution</span>
-                            <span>{formatNaira(pool.minContributionNgn)}</span>
+                            <span>{formatNaira(pool.minContribution.amountMajor)}</span>
                           </div>
                         </div>
 
@@ -484,7 +491,7 @@ export default function OpenOpportunitiesPage() {
                             {pool.investorCount} investors invested
                           </p>
                           <p className="text-muted-foreground">Your ownership: {formatPercent(userOwnership, 2)}</p>
-                          <p className="text-muted-foreground">You invested: {formatNaira(pool.userInvestedNgn || 0)}</p>
+                          <p className="text-muted-foreground">You invested: {formatNaira(pool.userInvested?.amountMajor || 0)}</p>
                         </div>
 
                         <Button
@@ -511,7 +518,7 @@ export default function OpenOpportunitiesPage() {
             <DialogTitle>Invest in {selectedPool?.assetType} pool</DialogTitle>
             <DialogDescription>
               Available balance: {formatNaira(walletBalance)}. Minimum contribution:{" "}
-              {formatNaira(selectedPool?.minContributionNgn || 0)}.
+              {formatNaira(selectedPool?.minContribution.amountMajor || 0)}.
             </DialogDescription>
           </DialogHeader>
 

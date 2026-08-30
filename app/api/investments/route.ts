@@ -1,44 +1,44 @@
-import { NextResponse } from "next/server"
-import { z } from "zod"
-
-import { finalizeAuthenticatedResponse, requireAuthenticatedUser } from "@/lib/api/route-guard"
-import { parseSearchParams } from "@/lib/api/validation"
+import { InvestmentListQuerySchema, InvestmentListResponseSchema } from "@/lib/api/contracts"
+import { defineRoute } from "@/lib/api/route-handler"
+import { money, serializeDateTime, serializeId } from "@/lib/api/serialization"
 import dbConnect from "@/lib/dbConnect"
 import Investment from "@/models/Investment"
 
-const querySchema = z.object({
-  investorId: z.string().trim().regex(/^[a-f\d]{24}$/i, "Invalid investorId.").optional(),
-})
-
-export async function GET(request: Request) {
-  try {
-    const authContext = await requireAuthenticatedUser(request, ["admin", "investor"], {
-      forbiddenMessage: "Investor or admin access required",
-    })
-    if ("response" in authContext) return authContext.response
-
-    const query = parseSearchParams(request, querySchema)
-    if ("response" in query) return query.response
-
+export const GET = defineRoute({
+  operationId: "listInvestments",
+  method: "GET",
+  auth: "authenticated",
+  action: "investment:read",
+  query: InvestmentListQuerySchema,
+  // Admins may scope to any investor; everyone else is pinned to their own id,
+  // so the policy engine sees an ownership match only when it should.
+  resource: ({ user, query }) => ({
+    type: "investment",
+    ownerId: user.role === "admin" && query.investorId ? query.investorId : String(user._id),
+  }),
+  response: InvestmentListResponseSchema,
+  successStatus: 200,
+  handler: async ({ user, query }) => {
     await dbConnect()
 
-    const investorId =
-      authContext.user.role === "admin" && query.data.investorId
-        ? query.data.investorId
-        : authContext.user._id.toString()
+    const isAdmin = user.role === "admin"
+    const investorId = isAdmin && query.investorId ? query.investorId : String(user._id)
+    const filter = isAdmin && !query.investorId ? {} : { investorId }
 
-    const filter = authContext.user.role === "admin" && !query.data.investorId ? {} : { investorId }
+    const investments = await Investment.find(filter).sort({ date: -1 }).lean()
 
-    const investments = await Investment.find(filter).sort({ startDate: -1, date: -1 })
-
-    const response = NextResponse.json({
-      success: true,
-      investments,
-    })
-
-    return finalizeAuthenticatedResponse(response, authContext)
-  } catch (error) {
-    console.error("INVESTMENTS_GET_ERROR", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
+    return {
+      success: true as const,
+      investments: investments.map((investment) => ({
+        id: serializeId(investment._id) as string,
+        investorId: serializeId(investment.investorId),
+        loanId: serializeId(investment.loanId),
+        vehicleId: serializeId(investment.vehicleId),
+        amount: money(Number(investment.amount) || 0),
+        monthlyReturn: money(Number(investment.monthlyReturn) || 0),
+        status: String(investment.status ?? "Unknown"),
+        date: serializeDateTime(investment.date),
+      })),
+    }
+  },
+})

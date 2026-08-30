@@ -1,63 +1,94 @@
-import { NextResponse } from "next/server"
-
-import { getAuthenticatedUser, withSessionRefresh } from "@/lib/auth/current-user"
+import {
+  PoolInvestParamsSchema,
+  PoolInvestmentRequestSchema,
+  PoolInvestmentResponseSchema,
+} from "@/lib/api/contracts"
+import { ApiError } from "@/lib/api/errors"
+import { defineRoute } from "@/lib/api/route-handler"
+import { money } from "@/lib/api/serialization"
 import { investInPool } from "@/lib/services/investments.service"
 
-function isTransientTransactionError(error: unknown) {
-  if (!error || typeof error !== "object") return false
+/**
+ * Service rule violations arrive as plain `Error`s. Each is mapped to a stable
+ * code with authored copy; the service message itself is never forwarded,
+ * because it may name internal state or record ids.
+ */
+function mapInvestmentError(error: unknown): never {
+  if (!(error instanceof Error)) throw error
 
-  const maybeMongoError = error as {
-    code?: number
-    codeName?: string
-    errorLabels?: string[]
-    message?: string
+  const message = error.message.toLowerCase()
+
+  if (message.includes("not found")) {
+    throw ApiError.notFound("Pool not found.")
   }
 
-  const labels = Array.isArray(maybeMongoError.errorLabels) ? maybeMongoError.errorLabels : []
-  const message = typeof maybeMongoError.message === "string" ? maybeMongoError.message : ""
-
-  return (
-    maybeMongoError.code === 251 ||
-    maybeMongoError.codeName === "NoSuchTransaction" ||
-    labels.includes("TransientTransactionError") ||
-    /does not match any in-progress transactions/i.test(message)
-  )
-}
-
-export async function POST(request: Request, context: { params: Promise<{ poolId: string }> }) {
-  try {
-    const { user, shouldRefreshSession } = await getAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
-
-    if (!["investor", "admin"].includes(user.role)) {
-      return NextResponse.json({ message: "Only investors or admins can invest in pools." }, { status: 403 })
-    }
-
-    const body = await request.json()
-    const amountNgn = Number(body.amountNgn)
-    const { poolId } = await context.params
-
-    const investment = await investInPool({
-      poolId,
-      userId: user._id.toString(),
-      amountNgn,
-      txRef: typeof body.txRef === "string" ? body.txRef : undefined,
-    })
-
-    const response = NextResponse.json({ success: true, investment }, { status: 201 })
-    return shouldRefreshSession ? withSessionRefresh(response, user) : response
-  } catch (error) {
-    if (isTransientTransactionError(error)) {
-      return NextResponse.json(
-        { message: "Temporary transaction conflict. Please retry your investment." },
-        { status: 503 },
-      )
-    }
-
-    const message = error instanceof Error ? error.message : "Failed to invest in pool."
-    console.error("POOL_INVEST_ERROR", error)
-    return NextResponse.json({ message }, { status: 400 })
+  if (message.includes("insufficient")) {
+    throw ApiError.unprocessable("Your wallet balance is not enough for this contribution.", [
+      { path: "amountNgn", message: "Exceeds available wallet balance." },
+    ])
   }
+
+  if (message.includes("kyc")) {
+    throw ApiError.forbidden("Investor verification is required before contributing to a pool.")
+  }
+
+  if (message.includes("closed") || message.includes("funded") || message.includes("status")) {
+    throw ApiError.conflict("This pool is no longer accepting contributions.")
+  }
+
+  if (message.includes("minimum") || message.includes("exceed") || message.includes("amount")) {
+    throw ApiError.unprocessable("The contribution amount is not valid for this pool.", [
+      { path: "amountNgn", message: "Outside the pool's accepted contribution range." },
+    ])
+  }
+
+  throw error
 }
+
+export const POST = defineRoute({
+  operationId: "investInPool",
+  method: "POST",
+  auth: "authenticated",
+  roles: ["investor", "admin"],
+  params: PoolInvestParamsSchema,
+  body: PoolInvestmentRequestSchema,
+  response: PoolInvestmentResponseSchema,
+  successStatus: 201,
+  handler: async ({ request, user, params, body }) => {
+    try {
+      const investment = await investInPool({
+        poolId: params.poolId,
+        userId: String(user._id),
+        amountNgn: body.amountNgn,
+        txRef: body.txRef,
+        idempotencyKey: request.headers.get("Idempotency-Key") || undefined,
+        consentAcceptanceId: body.consentAcceptanceId,
+        jurisdiction: body.jurisdiction,
+        role: (user.role as "driver" | "investor" | "admin") || "investor",
+      })
+
+      return {
+        success: true as const,
+        investment: {
+          poolId: investment.poolId,
+          userId: investment.userId,
+          amount: money(investment.amountNgn),
+          ownershipUnits: investment.ownershipUnits,
+          ownershipBps: investment.ownershipBps,
+          txRef: investment.txRef,
+          consentAcceptanceId: investment.consentAcceptanceId,
+          acceptedDocumentSetHash: investment.acceptedDocumentSetHash,
+          poolStatus: investment.poolStatus as "OPEN" | "FUNDED" | "CLOSED",
+          currentRaised: money(investment.currentRaisedNgn),
+          targetAmount: money(investment.targetAmountNgn),
+          investorCount: investment.investorCount,
+          userBalance: money(investment.userBalanceNgn),
+        },
+      }
+    } catch (error) {
+      // Transient Mongo transaction failures are already mapped to a retryable
+      // 503 by `normalizeError`, so `mapInvestmentError` rethrows them intact.
+      return mapInvestmentError(error)
+    }
+  },
+})

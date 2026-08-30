@@ -55,4 +55,5 @@ const AuditLogSchema = new Schema<IAuditLog>(
   },
 )
 
-export default mongoose.models.AuditLog || mongoose.model<IAuditLog>("AuditLog", AuditLogSchema)
+export default (mongoose.models.AuditLog ||
+  mongoose.model<IAuditLog>("AuditLog", AuditLogSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

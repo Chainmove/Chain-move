@@ -83,4 +83,5 @@ const DriverPaymentSchema: Schema = new Schema(
 DriverPaymentSchema.index({ driverUserId: 1, createdAt: -1 })
 DriverPaymentSchema.index({ contractId: 1, createdAt: -1 })
 
-export default mongoose.models.DriverPayment || mongoose.model<IDriverPayment>("DriverPayment", DriverPaymentSchema)
+export default (mongoose.models.DriverPayment ||
+  mongoose.model<IDriverPayment>("DriverPayment", DriverPaymentSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;

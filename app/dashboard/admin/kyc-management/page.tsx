@@ -47,12 +47,11 @@ import { Input } from "@/components/ui/input"
 import { updateUserKycStatus } from "@/actions/user"
 
 interface KycRequest {
-  _id: string
-  role: "driver" | "investor"
-  name: string
-  fullName?: string
-  email?: string | null
-  phoneNumber?: string
+  id: string
+  role: "driver" | "investor" | "admin"
+  name: string | null
+  email: string | null
+  phoneNumber: string | null
   kycStatus: "none" | "pending" | "approved_stage1" | "pending_stage2" | "approved_stage2" | "rejected"
   kycDocuments: string[]
   createdAt: string
@@ -120,7 +119,7 @@ export default function AdminKycManagementPage() {
       const res = await fetch("/api/admin/kyc-requests")
       if (!res.ok) {
         const errorData = await res.json()
-        throw new Error(errorData.error || "Failed to fetch KYC requests")
+        throw new Error(errorData.message || "Failed to fetch KYC requests")
       }
       const data: KycRequest[] = await res.json()
       setKycRequests(data)
@@ -270,9 +269,9 @@ export default function AdminKycManagementPage() {
       }
 
       const res = await updateUserKycStatus(
-        selectedRequest._id,
+        selectedRequest.id,
         newKycStatus,
-        selectedRequest.kycDocuments,
+        selectedRequest.documentReferences,
         rejectionReason,
         newPhysicalMeetingDate,
         newPhysicalMeetingStatus,

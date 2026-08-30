@@ -6,6 +6,7 @@ export interface INotification extends Document {
   title: string
   message: string
   type: string
+  category: "wallet" | "investment" | "repayment" | "kyc" | "vehicle" | "payout" | "stellar" | "system"
   priority: "low" | "medium" | "high"
   link?: string
   read: boolean
@@ -18,6 +19,12 @@ const NotificationSchema: Schema = new Schema({
   title: { type: String, required: true, trim: true },
   message: { type: String, required: true, trim: true },
   type: { type: String, trim: true, default: "info" },
+  category: {
+    type: String,
+    enum: ["wallet", "investment", "repayment", "kyc", "vehicle", "payout", "stellar", "system"],
+    default: "system",
+    index: true,
+  },
   priority: {
     type: String,
     enum: ["low", "medium", "high"],
@@ -30,5 +37,7 @@ const NotificationSchema: Schema = new Schema({
   read: { type: Boolean, default: false },
   timestamp: { type: Date, default: Date.now, index: true },
 })
+
+NotificationSchema.index({ userId: 1, timestamp: -1, _id: -1 })
 
 export default mongoose.models.Notification || mongoose.model<INotification>("Notification", NotificationSchema)

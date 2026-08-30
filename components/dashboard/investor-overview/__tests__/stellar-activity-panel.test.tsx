@@ -2,7 +2,7 @@ import { render } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 
 import { StellarActivityPanel } from "@/components/dashboard/investor-overview/stellar-activity-panel"
-import { buildStellarReferenceUrl } from "@/lib/stellar/config"
+import { buildStellarReferenceUrl } from "@/lib/stellar/display-config"
 
 describe("StellarActivityPanel", () => {
   it("shows the empty state when no Stellar account is linked", () => {

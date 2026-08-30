@@ -6,6 +6,7 @@ export interface IInvestment extends Document {
   vehicleId: Schema.Types.ObjectId;
   amount: number;
   status: 'Funding' | 'Active' | 'Completed';
+  version: number;
   monthlyReturn: number;
   date: Date;
 }
@@ -17,11 +18,13 @@ const InvestmentSchema: Schema = new Schema({
   amount: { type: Number, required: true },
   status: {
     type: String,
-    enum: ['Active', 'Completed'],
-    default: 'Active',
+    enum: ['Funding', 'Active', 'Completed'],
+    default: 'Funding',
   },
+  version: { type: Number, default: 0 },
   monthlyReturn: { type: Number, required: true },
   date: { type: Date, default: Date.now },
 });
 
-export default mongoose.models.Investment || mongoose.model<IInvestment>('Investment', InvestmentSchema);
+export default (mongoose.models.Investment ||
+  mongoose.model<IInvestment>('Investment', InvestmentSchema)) as mongoose.Model<{ _id: any; [key: string]: any }>;
