@@ -21,7 +21,7 @@
  * access. This is the default outside of the `production` NODE_ENV.
  */
 
-import type { StellarEventType, ChainMoveRecordType } from "@/models/StellarIndexedEvent"
+import { buildStellarIndexedEventId, normalizeStellarIndexedNetwork, type StellarEventType, type ChainMoveRecordType } from "@/models/StellarIndexedEvent"
 import { getStellarConfig } from "@/lib/stellar/config"
 import crypto from "crypto"
 
@@ -262,14 +262,20 @@ interface PersistResult {
   error?: string
 }
 
-async function persistEvent(op: RawStellarOperation): Promise<PersistResult> {
+async function persistEvent(op: RawStellarOperation, network: string, projectionProvenance: "indexed" | "rebuilt_from_raw" = "indexed"): Promise<PersistResult> {
   const { default: StellarIndexedEvent } = await import("@/models/StellarIndexedEvent")
 
   const chainMoveRecordType = mapEventToChainMoveRecord(op)
   const eventType = toEventType(op.type ?? "unknown")
+  const normalizedNetwork = normalizeStellarIndexedNetwork(network)
+  const operationId = op.id
 
   const doc = {
-    _id: op.id,
+    _id: buildStellarIndexedEventId(normalizedNetwork, operationId),
+    network: normalizedNetwork,
+    operationId,
+    projectionStatus: "active",
+    projectionProvenance,
     pagingToken: op.paging_token,
     eventType,
     sourceAccount: op.source_account,
@@ -609,7 +615,7 @@ export function createStellarIndexer(options: StellarIndexerOptions = {}): Stell
         continue
       }
 
-      const result = await persistEvent(op)
+      const result = await persistEvent(op, network)
 
       if (result.inserted) {
         processed++
@@ -660,7 +666,7 @@ export function createStellarIndexer(options: StellarIndexerOptions = {}): Stell
 
     for (const failure of failures) {
       const op = failure.raw as RawStellarOperation
-      const result = await persistEvent(op)
+      const result = await persistEvent(op, network)
       await StellarDeadLetterEvent.findByIdAndUpdate(failure._id, {
         $inc: { replayCount: 1 },
         $set: { lastReplayAt: new Date() },
@@ -723,3 +729,6 @@ export function createStellarIndexer(options: StellarIndexerOptions = {}): Stell
 
   return { sync, replayDeadLetters, health, streamId, isMock }
 }
+
+
+
