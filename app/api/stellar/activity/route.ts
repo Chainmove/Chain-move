@@ -167,18 +167,16 @@ export async function GET(request: Request) {
     }
 
     // 2. Query MongoDB for events
-    let eventQuery: any = {}
-    if (user.role === "admin") {
-      // Admins see all indexed events
-      eventQuery = {}
-    } else {
-      // Investors/Drivers see events involving their linked key
-      eventQuery = {
-        $or: [
-          { sourceAccount: stellarPublicKey },
-          { destinationAccount: stellarPublicKey }
-        ]
-      }
+    const eventQuery: any = {
+      network: config.network.toLowerCase(),
+      projectionStatus: "active",
+    }
+    if (user.role !== "admin") {
+      // Investors/Drivers see events involving their linked key on the configured Stellar network only.
+      eventQuery.$or = [
+        { sourceAccount: stellarPublicKey },
+        { destinationAccount: stellarPublicKey }
+      ]
     }
 
     const events = await StellarIndexedEvent.find(eventQuery)
@@ -241,3 +239,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Failed to fetch Stellar activity" }, { status: 500 })
   }
 }
+
+
+
