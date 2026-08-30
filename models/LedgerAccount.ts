@@ -11,6 +11,10 @@ export interface ILedgerAccount {
     | "revenue_fees"
     | "repayments_receivable"
     | "payouts_payable"
+    | "settlement_in_transit"
+    | "refunds_payable"
+    | "platform_reserve"
+    | "suspense"
     | "adjustment"
   ownerId?: Schema.Types.ObjectId
   ownerType?: "driver" | "investor" | "admin" | "system"
@@ -40,6 +44,10 @@ const LedgerAccountSchema: Schema = new Schema(
         "revenue_fees",
         "repayments_receivable",
         "payouts_payable",
+        "settlement_in_transit",
+        "refunds_payable",
+        "platform_reserve",
+        "suspense",
         "adjustment",
       ],
       required: true,
