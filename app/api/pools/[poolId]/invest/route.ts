@@ -28,6 +28,10 @@ function mapInvestmentError(error: unknown): never {
     ])
   }
 
+  if (message.includes("kyc")) {
+    throw ApiError.forbidden("Investor verification is required before contributing to a pool.")
+  }
+
   if (message.includes("closed") || message.includes("funded") || message.includes("status")) {
     throw ApiError.conflict("This pool is no longer accepting contributions.")
   }
@@ -50,13 +54,14 @@ export const POST = defineRoute({
   body: PoolInvestmentRequestSchema,
   response: PoolInvestmentResponseSchema,
   successStatus: 201,
-  handler: async ({ user, params, body }) => {
+  handler: async ({ request, user, params, body }) => {
     try {
       const investment = await investInPool({
         poolId: params.poolId,
         userId: String(user._id),
         amountNgn: body.amountNgn,
         txRef: body.txRef,
+        idempotencyKey: request.headers.get("Idempotency-Key") || undefined,
         consentAcceptanceId: body.consentAcceptanceId,
         jurisdiction: body.jurisdiction,
         role: (user.role as "driver" | "investor" | "admin") || "investor",
