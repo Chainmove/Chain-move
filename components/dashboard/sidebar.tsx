@@ -148,7 +148,7 @@ const SIDEBAR_SECTIONS: Record<DashboardRole, SidebarSectionConfig[]> = {
         { label: "Investors", href: "/dashboard/admin/investors", icon: Coins },
         { label: "Drivers", href: "/dashboard/admin/drivers", icon: Car },
         { label: "Vehicles", href: "/dashboard/admin/vehicles", icon: Car },
-        { label: "Fleet Operations", href: "/dashboard/admin/fleet-operations", icon: Gauge },
+        { label: "KYC Management", href: "/dashboard/admin/kyc-management", icon: UserCheck },
       ],
     },
     {

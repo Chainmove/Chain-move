@@ -364,8 +364,12 @@ export async function updateUserKycStatus(
         user.isKycVerified = false
         user.kycVerified = false
       } else if (physicalMeetingStatus === "approved") {
-        if (oldPhysicalMeetingStatus !== "scheduled") {
-          return { success: false, message: "Only scheduled meetings can be approved." }
+        if (
+          oldPhysicalMeetingStatus !== "scheduled" &&
+          oldPhysicalMeetingStatus !== "none" &&
+          oldPhysicalMeetingStatus !== "rescheduled"
+        ) {
+          return { success: false, message: "Only scheduled, none, or rescheduled meetings can be approved." }
         }
 
         if (!user.physicalMeetingDate && !normalizedMeetingDate) {
