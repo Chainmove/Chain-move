@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "mkdir -p public && cp ../contributor-safety-and-stellar-roadmap.md public/index.md && printf '<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ChainMove Documentation</title></head><body><main style=\"max-width:900px;margin:40px auto;font-family:Arial,sans-serif;line-height:1.6;padding:0 20px\"><h1>ChainMove Documentation</h1><p>The documentation file is available here:</p><p><a href=\"/index.md\">Open ChainMove documentation</a></p></main></body></html>' > public/index.html"
+    "build": "node init && mkdir -p public && cp ../contributor-safety-and-stellar-roadmap.md public/index.md && printf '<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ChainMove Documentation</title></head><body><main style=\"max-width:900px;margin:40px auto;font-family:Arial,sans-serif;line-height:1.6;padding:0 20px\"><h1>ChainMove Documentation</h1><p>The documentation file is available here:</p><p><a href=\"/index.md\">Open ChainMove documentation</a></p></main></body></html>' > public/index.html"
   }
 }
