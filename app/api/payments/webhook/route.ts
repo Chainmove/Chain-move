@@ -7,6 +7,11 @@ import { confirmDriverPayment, createAndConfirmDriverTransferPayment } from "@/l
 import { getInvestorVirtualAccountByAccountNumber } from "@/lib/services/paystack-investor-dva.service"
 import { getDriverVirtualAccountByAccountNumber } from "@/lib/services/paystack-dva.service"
 import { processGatewayCharge } from "@/lib/services/paystack-processing.service"
+import {
+  ingestWebhookEvent,
+  markWebhookCompleted,
+  markWebhookFailed,
+} from "@/lib/services/webhook-inbox.service"
 
 function resolvePaymentType(metadata: Record<string, unknown>) {
   const rawType = typeof metadata.paymentType === "string" ? metadata.paymentType.toLowerCase() : "wallet_funding"
@@ -43,7 +48,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Invalid signature." }, { status: 401 })
   }
 
-  const event = JSON.parse(body)
+  let event: Record<string, unknown>
+  try {
+    event = JSON.parse(body)
+  } catch {
+    return NextResponse.json({ message: "Malformed JSON payload." }, { status: 400 })
+  }
+
   const eventName = event.event as string
   const supportedEvents = [
     "charge.success",
@@ -58,7 +69,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "ignored" }, { status: 200 })
   }
 
-  try {
+  // Durably persist the verified event envelope before any domain processing.
+  const providerEventId = (event.data as Record<string, unknown>)?.id as string | undefined
+  const inboxKey = providerEventId ?? `ref:${(event.data as Record<string, unknown>)?.reference}`
+  const ingestResult = await ingestWebhookEvent(inboxKey, eventName, body)
+
+  if (ingestResult.conflicting) {
+    return NextResponse.json(
+      { status: "quarantined", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  if (ingestResult.duplicate) {
+    // Already successfully processed — return 200 to prevent redelivery storms.
+    return NextResponse.json(
+      { status: "duplicate", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  const inboxId = ingestResult.inboxId
+
+  async function processDomain(): Promise<NextResponse> {
     await dbConnect()
 
     const charge = event.data
@@ -189,8 +222,22 @@ export async function POST(request: Request) {
       },
       { status: 200 },
     )
+  }
+
+  let domainResponse: NextResponse
+  try {
+    domainResponse = await processDomain()
+    // Mark completed only on 2xx responses
+    if (domainResponse.status < 400) {
+      await markWebhookCompleted(inboxId).catch(() => undefined)
+    } else {
+      await markWebhookFailed(inboxId, `Domain returned ${domainResponse.status}`).catch(() => undefined)
+    }
   } catch (error) {
     console.error("PAYSTACK_WEBHOOK_ERROR", error)
+    const message = error instanceof Error ? error.message : "Unknown error"
+    await markWebhookFailed(inboxId, message).catch(() => undefined)
     return NextResponse.json({ message: "Error processing webhook." }, { status: 500 })
   }
+  return domainResponse
 }
