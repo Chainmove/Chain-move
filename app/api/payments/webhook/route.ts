@@ -7,7 +7,11 @@ import { confirmDriverPayment, createAndConfirmDriverTransferPayment } from "@/l
 import { getInvestorVirtualAccountByAccountNumber } from "@/lib/services/paystack-investor-dva.service"
 import { getDriverVirtualAccountByAccountNumber } from "@/lib/services/paystack-dva.service"
 import { processGatewayCharge } from "@/lib/services/paystack-processing.service"
-import WebhookInboxEvent, { hashPayload, nextRetryDelay } from "@/models/WebhookInboxEvent"
+import {
+  ingestWebhookEvent,
+  markWebhookCompleted,
+  markWebhookFailed,
+} from "@/lib/services/webhook-inbox.service"
 
 function resolvePaymentType(metadata: Record<string, unknown>) {
   const rawType = typeof metadata.paymentType === "string" ? metadata.paymentType.toLowerCase() : "wallet_funding"
@@ -65,7 +69,29 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "ignored" }, { status: 200 })
   }
 
-  try {
+  // Durably persist the verified event envelope before any domain processing.
+  const providerEventId = (event.data as Record<string, unknown>)?.id as string | undefined
+  const inboxKey = providerEventId ?? `ref:${(event.data as Record<string, unknown>)?.reference}`
+  const ingestResult = await ingestWebhookEvent(inboxKey, eventName, body)
+
+  if (ingestResult.conflicting) {
+    return NextResponse.json(
+      { status: "quarantined", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  if (ingestResult.duplicate) {
+    // Already successfully processed — return 200 to prevent redelivery storms.
+    return NextResponse.json(
+      { status: "duplicate", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  const inboxId = ingestResult.inboxId
+
+  async function processDomain(): Promise<NextResponse> {
     await dbConnect()
 
     // --- Durable webhook inbox: persist before processing (issue #89) ---
@@ -255,33 +281,22 @@ export async function POST(request: Request) {
       },
       { status: 200 },
     )
+  }
+
+  let domainResponse: NextResponse
+  try {
+    domainResponse = await processDomain()
+    // Mark completed only on 2xx responses
+    if (domainResponse.status < 400) {
+      await markWebhookCompleted(inboxId).catch(() => undefined)
+    } else {
+      await markWebhookFailed(inboxId, `Domain returned ${domainResponse.status}`).catch(() => undefined)
+    }
   } catch (error) {
     console.error("PAYSTACK_WEBHOOK_ERROR", error)
-
-    // Mark inbox event as failed and schedule retry if inbox event was created
-    try {
-      // inboxEvent may not be in scope if error occurred before it was set; safe to skip
-      if (typeof inboxEvent !== "undefined" && inboxEvent) {
-        const attempts = (inboxEvent.attempts ?? 0) + 1
-        const maxAttempts = inboxEvent.maxAttempts ?? 5
-        const newStatus: "failed" | "dead_letter" = attempts >= maxAttempts ? "dead_letter" : "failed"
-        await WebhookInboxEvent.updateOne(
-          { _id: inboxEvent._id },
-          {
-            $set: {
-              status: newStatus,
-              attempts,
-              lastError: error instanceof Error ? error.message : String(error),
-              nextRetryAt:
-                newStatus === "failed" ? new Date(Date.now() + nextRetryDelay(attempts)) : undefined,
-            },
-          },
-        )
-      }
-    } catch (auditError) {
-      console.error("WEBHOOK_INBOX_AUDIT_ERROR", auditError)
-    }
-
+    const message = error instanceof Error ? error.message : "Unknown error"
+    await markWebhookFailed(inboxId, message).catch(() => undefined)
     return NextResponse.json({ message: "Error processing webhook." }, { status: 500 })
   }
+  return domainResponse
 }

@@ -3,19 +3,22 @@ import mongoose, { Document, Schema } from "mongoose"
 export type PoolAssetType = "SHUTTLE" | "KEKE"
 
 /**
- * Full pool lifecycle state machine (issue #90).
+ * Full lifecycle states for a vehicle investment pool.
  *
- * Allowed transitions:
- *   draft      → review | cancelled
- *   review     → funding | cancelled
- *   funding    → fully_funded | closing | cancelled
- *   fully_funded → closing | cancelled
- *   closing    → active | cancelled
- *   active     → paused | completed | cancelled
- *   paused     → active | cancelled
- *   completed  → archived
- *   cancelled  → (terminal)
- *   archived   → (terminal)
+ * Transition matrix (see pool-lifecycle.service.ts for enforcement):
+ *
+ *   draft       → review | cancelled
+ *   review      → funding | cancelled
+ *   funding     → fully_funded | closing | cancelled
+ *   fully_funded→ closing | cancelled
+ *   closing     → active | cancelled
+ *   active      → paused | completed | cancelled
+ *   paused      → active | cancelled
+ *   completed   → archived
+ *   cancelled   → (terminal)
+ *   archived    → (terminal)
+ *
+ * Legacy statuses are mapped on read: OPEN→funding, FUNDED→fully_funded, CLOSED→completed.
  */
 export type PoolStatus =
   | "draft"
@@ -28,33 +31,10 @@ export type PoolStatus =
   | "completed"
   | "cancelled"
   | "archived"
-
-/** Backward-compatible alias so existing OPEN/FUNDED/CLOSED references keep compiling. */
-export const LEGACY_STATUS_MAP: Record<string, PoolStatus> = {
-  OPEN: "funding",
-  FUNDED: "fully_funded",
-  CLOSED: "completed",
-}
-
-export const POOL_TRANSITIONS: Record<PoolStatus, PoolStatus[]> = {
-  draft: ["review", "cancelled"],
-  review: ["funding", "cancelled"],
-  funding: ["fully_funded", "closing", "cancelled"],
-  fully_funded: ["closing", "cancelled"],
-  closing: ["active", "cancelled"],
-  active: ["paused", "completed", "cancelled"],
-  paused: ["active", "cancelled"],
-  completed: ["archived"],
-  cancelled: [],
-  archived: [],
-}
-
-/**
- * Returns true when the transition from→to is permitted.
- */
-export function isValidPoolTransition(from: PoolStatus, to: PoolStatus): boolean {
-  return (POOL_TRANSITIONS[from] ?? []).includes(to)
-}
+  // Legacy aliases kept for backwards-compat reads
+  | "OPEN"
+  | "FUNDED"
+  | "CLOSED"
 
 export interface IInvestmentPool extends Document {
   assetType: PoolAssetType
@@ -66,13 +46,12 @@ export interface IInvestmentPool extends Document {
   investorCount: number
   createdBy: Schema.Types.ObjectId
   description?: string
-  fundingDeadline?: Date
-  closedFundingAt?: Date
-  activatedAt?: Date
-  completedAt?: Date
-  cancelledAt?: Date
-  cancellationReason?: string
-  schemaVersion: number
+  /** Set when funding closes; investments beyond this amount are rejected */
+  fundingCapacityNgn: number | null
+  /** Deadline for funding; after this an underfunded pool auto-cancels */
+  fundingDeadline: Date | null
+  /** Optimistic concurrency version field */
+  __v: number
   createdAt: Date
   updatedAt: Date
 }
@@ -113,7 +92,7 @@ const InvestmentPoolSchema: Schema = new Schema(
         "completed",
         "cancelled",
         "archived",
-        // Legacy values retained for backward-compatible reads during migration
+        // Legacy aliases
         "OPEN",
         "FUNDED",
         "CLOSED",
@@ -149,8 +128,17 @@ const InvestmentPoolSchema: Schema = new Schema(
       trim: true,
       maxlength: 600,
     },
+    fundingCapacityNgn: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+    fundingDeadline: {
+      type: Date,
+      default: null,
+    },
   },
-  { timestamps: true },
+  { timestamps: true, optimisticConcurrency: true },
 )
 
 export default (mongoose.models.InvestmentPool ||
