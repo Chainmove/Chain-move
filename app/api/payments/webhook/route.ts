@@ -7,6 +7,11 @@ import { confirmDriverPayment, createAndConfirmDriverTransferPayment } from "@/l
 import { getInvestorVirtualAccountByAccountNumber } from "@/lib/services/paystack-investor-dva.service"
 import { getDriverVirtualAccountByAccountNumber } from "@/lib/services/paystack-dva.service"
 import { processGatewayCharge } from "@/lib/services/paystack-processing.service"
+import {
+  ingestWebhookEvent,
+  markWebhookCompleted,
+  markWebhookFailed,
+} from "@/lib/services/webhook-inbox.service"
 
 function resolvePaymentType(metadata: Record<string, unknown>) {
   const rawType = typeof metadata.paymentType === "string" ? metadata.paymentType.toLowerCase() : "wallet_funding"
@@ -43,7 +48,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Invalid signature." }, { status: 401 })
   }
 
-  const event = JSON.parse(body)
+  let event: Record<string, unknown>
+  try {
+    event = JSON.parse(body)
+  } catch {
+    return NextResponse.json({ message: "Malformed JSON payload." }, { status: 400 })
+  }
+
   const eventName = event.event as string
   const supportedEvents = [
     "charge.success",
@@ -58,10 +69,85 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "ignored" }, { status: 200 })
   }
 
-  try {
+  // Durably persist the verified event envelope before any domain processing.
+  const providerEventId = (event.data as Record<string, unknown>)?.id as string | undefined
+  const inboxKey = providerEventId ?? `ref:${(event.data as Record<string, unknown>)?.reference}`
+  const ingestResult = await ingestWebhookEvent(inboxKey, eventName, body)
+
+  if (ingestResult.conflicting) {
+    return NextResponse.json(
+      { status: "quarantined", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  if (ingestResult.duplicate) {
+    // Already successfully processed — return 200 to prevent redelivery storms.
+    return NextResponse.json(
+      { status: "duplicate", correlationId: ingestResult.correlationId },
+      { status: 200 },
+    )
+  }
+
+  const inboxId = ingestResult.inboxId
+
+  async function processDomain(): Promise<NextResponse> {
     await dbConnect()
 
-    const charge = event.data
+    // --- Durable webhook inbox: persist before processing (issue #89) ---
+    const charge = (event.data ?? {}) as Record<string, unknown>
+    const providerEventId =
+      typeof (charge as any).reference === "string"
+        ? (charge as any).reference
+        : `${eventName}:${Date.now()}`
+    const payloadHash = hashPayload(body)
+    const correlationId = crypto.randomUUID()
+
+    let inboxEvent = await WebhookInboxEvent.findOne({
+      provider: "paystack",
+      providerEventId,
+      payloadHash,
+    })
+
+    if (inboxEvent && inboxEvent.status === "completed") {
+      // Exact duplicate of an already-processed delivery — safe to ack
+      return NextResponse.json({ status: "already_processed", correlationId: inboxEvent.correlationId }, { status: 200 })
+    }
+
+    if (!inboxEvent) {
+      // Check for conflicting payload (same reference, different hash)
+      const conflict = await WebhookInboxEvent.findOne({
+        provider: "paystack",
+        providerEventId,
+        payloadHash: { $ne: payloadHash },
+      })
+      if (conflict) {
+        // Quarantine: move conflict to dead_letter and continue to store new event for inspection
+        await WebhookInboxEvent.updateOne(
+          { _id: conflict._id },
+          { $set: { status: "dead_letter", lastError: "Conflicting payload received for the same reference." } },
+        )
+      }
+
+      inboxEvent = await WebhookInboxEvent.create({
+        provider: "paystack",
+        providerEventId,
+        eventType: eventName,
+        payloadHash,
+        rawPayload: event,
+        status: "processing",
+        correlationId,
+        receivedAt: new Date(),
+      })
+    } else {
+      // Retry of a previously failed event
+      inboxEvent.status = "processing"
+      inboxEvent.attempts += 1
+      await inboxEvent.save()
+    }
+    // --- End inbox persist ---
+
+    const charge = (event.data ?? {}) as Record<string, any>
     const reference = charge.reference as string
     if (!reference) {
       return NextResponse.json({ message: "Missing transaction reference." }, { status: 400 })
@@ -181,16 +267,36 @@ export async function POST(request: Request) {
       processedVia: "webhook",
     })
 
+    await WebhookInboxEvent.updateOne(
+      { _id: inboxEvent._id },
+      { $set: { status: "completed", processedAt: new Date() } },
+    )
+
     return NextResponse.json(
       {
         status: "success",
         alreadyProcessed: settlementResult.alreadyProcessed,
         type: settlementResult.type,
+        correlationId: inboxEvent.correlationId,
       },
       { status: 200 },
     )
+  }
+
+  let domainResponse: NextResponse
+  try {
+    domainResponse = await processDomain()
+    // Mark completed only on 2xx responses
+    if (domainResponse.status < 400) {
+      await markWebhookCompleted(inboxId).catch(() => undefined)
+    } else {
+      await markWebhookFailed(inboxId, `Domain returned ${domainResponse.status}`).catch(() => undefined)
+    }
   } catch (error) {
     console.error("PAYSTACK_WEBHOOK_ERROR", error)
+    const message = error instanceof Error ? error.message : "Unknown error"
+    await markWebhookFailed(inboxId, message).catch(() => undefined)
     return NextResponse.json({ message: "Error processing webhook." }, { status: 500 })
   }
+  return domainResponse
 }
